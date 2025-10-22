@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WixLocalization Culture="en-us" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+
+	<!-- ============================================================
+	     UI STRINGS LOCALIZATION
+	     Defines dialog titles and descriptions for the OneGov Password Sync Agent installer
+	     ============================================================ -->
+
+	<!-- ============================================================
+	     WELCOME DIALOG (First-time installation)
+	     ============================================================ -->
+	<String Id="WelcomeDlgTitle"
+	        Value="{\WixUI_Font_BiggerB}Welcome to [ProductName] Setup Wizard"/>
+	<String Id="WelcomeDlgDescription"
+	        Value="This Setup Wizard will install [ProductName] on your computer. Click Next to continue or Cancel to exit the Setup Wizard.&#x0D;&#x0A;&#x0D;&#x0A;Please configure Hostname, IP Address, and Secret Key from OneGov IDM before installation."/>
+
+	<!-- ============================================================
+	     MAINTENANCE DIALOG (Modify / Repair / Remove mode)
+	     ============================================================ -->
+	<String Id="MaintenanceWelcomeDlgTitle"
+	        Value="{\WixUI_Font_BiggerB}Welcome to [ProductName] Setup Wizard"/>
+	<String Id="MaintenanceWelcomeDlgDescription"
+	        Value="This Setup Wizard allows you to remove [ProductName] from your computer. Click Next to continue or Cancel to exit the Setup Wizard."/>
+
+	<!-- ============================================================
+	     LICENSE AGREEMENT DIALOG
+	     ============================================================ -->
+	<String Id="LicenseAgreementDlgTitle"
+	        Value="{\MainTitle}End-User License Agreement"/>
+	<String Id="LicenseAgreementDlgDescription"
+	        Value="Please read and accept the license to continue."/>
+
+	<!-- ============================================================
+	     INSTALL LOCATION DIALOG
+	     ============================================================ -->
+	<String Id="InstallDirDlgTitle"
+	        Value="{\MainTitle}Install Location"/>
+	<String Id="InstallDirDlgDescription"
+	        Value="Select where to install [ProductName]."/>
+
+	<!-- ============================================================
+	     HOST CONFIGURATION DIALOG
+	     ============================================================ -->
+	<String Id="UIHostConfigHeader"
+	        Value="{\MainTitle}OneGov IDM Connection Settings"/>
+	<String Id="UIHostConfigDescription"
+	        Value="Enter OneGov and Directory Server details, then click Next."/>
+
+</WixLocalization>

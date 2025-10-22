@@ -1,0 +1,137 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!-- =============================================================================
+     ONEGOV PASSWORD SYNC AGENT - MAIN INSTALLER DEFINITION (WiX v4)
+     
+     Purpose:
+       Defines package metadata, directory layout, feature components, and UI
+       configuration for the OneGov Password Sync Agent installer.
+
+     Key Features:
+       • Branded banner + background images (asset\banner.bmp / dialog.bmp)
+       • Hidden configuration properties populated via custom dialog
+       • Writes config.ini dynamically with entered values
+       • Disables Change/Repair in Control Panel (maintenance mode)
+       • Integrates with custom dialog fragment (HostConfigurationDlg.wxs)
+       • Single feature layout for all components
+     ============================================================================= -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <!-- ============================================================
+       PRODUCT METADATA AND CORE PACKAGE SETTINGS
+       ============================================================ -->
+  <Package Name="OneGov Password Sync Agent"
+           Manufacturer="Azimuth Labs PTE Ltd"
+           Version="1.0.0.0"
+           ProductCode="*"
+           UpgradeCode="B0E6A3A1-6E7E-4E11-8C0D-5F1F1E3C1234"
+           Scope="perMachine"
+           InstallerVersion="500"
+           Compressed="yes">
+
+    <!-- ============================================================
+         CONTROL PANEL / ARP CONFIGURATION
+         ============================================================ -->
+    <!-- Icon displayed in Windows "Programs and Features" -->
+    <Icon Id="AppIcon" SourceFile="asset\app.ico"/>
+    <Property Id="ARPPRODUCTICON" Value="AppIcon"/>
+
+    <!-- ============================================================
+         INSTALLER BRANDING (VISUAL ASSETS)
+         ============================================================ -->
+    <!-- Banner (top strip) and dialog background -->
+    <WixVariable Id="WixUIBannerBmp" Value="asset\banner.bmp"/>
+    <WixVariable Id="WixUIDialogBmp"  Value="asset\dialog.bmp"/>
+
+    <!-- License agreement RTF (displayed in LicenseDlg) -->
+    <WixVariable Id="WixUILicenseRtf" Value="asset\license.rtf"/>
+
+    <!-- ============================================================
+         DIRECTORY STRUCTURE
+         ============================================================ -->
+    <!-- Root installation directory under Program Files -->
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR"/>
+
+    <StandardDirectory Id="ProgramFilesFolder">
+      <Directory Id="INSTALLDIR" Name="OneGov Password Sync"/>
+    </StandardDirectory>
+
+    <!-- ============================================================
+         INSTALLATION PROPERTIES (USER INPUT)
+         ============================================================ -->
+    <!-- Values collected from custom dialog (HostConfigurationDlg) -->
+    <Property Id="SERVER"    Hidden="yes"/>
+    <Property Id="HOSTNAME"  Hidden="yes"/>
+    <Property Id="IPADDRESS" Hidden="yes"/>
+    <Property Id="SECRETKEY" Hidden="yes"/>
+
+    <!-- ============================================================
+         COMPONENTS AND FILE PAYLOADS
+         ============================================================ -->
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLDIR">
+
+      <!-- Example static file -->
+      <Component Id="cmpReadme" Guid="*">
+        <File Id="Readme" Source="asset\readme.txt"/>
+      </Component>
+
+      <!-- Dynamically generate config.ini from MSI properties -->
+      <Component Id="cmpConfigIni"
+                 Directory="INSTALLDIR"
+                 Guid="{B7A8C2B9-29D9-4A6C-AF2B-2F2E6F9A12AB}"
+                 KeyPath="yes"
+                 NeverOverwrite="yes">
+
+        <!-- Ensure directory exists before writing -->
+        <CreateFolder/>
+
+        <!-- Each property written as line under [connection] -->
+        <IniFile Id="CfgServer" Name="config.ini"
+                 Section="connection" Key="server"   Value="[SERVER]"    Action="addLine"/>
+        <IniFile Id="CfgHost"   Name="config.ini"
+                 Section="connection" Key="hostname" Value="[HOSTNAME]"  Action="addLine"/>
+        <IniFile Id="CfgIp"     Name="config.ini"
+                 Section="connection" Key="ip"       Value="[IPADDRESS]" Action="addLine"/>
+        <IniFile Id="CfgSecret" Name="config.ini"
+                 Section="connection" Key="secret"   Value="[SECRETKEY]" Action="addLine"/>
+      </Component>
+
+    </ComponentGroup>
+
+    <!-- ============================================================
+         FEATURE DEFINITION
+         ============================================================ -->
+    <Feature Id="MainFeature"
+             Title="OneGov Password Sync Agent Feature"
+             Level="1">
+      <ComponentGroupRef Id="ProductComponents"/>
+    </Feature>
+
+    <!-- ============================================================
+         USER INTERFACE SEQUENCE
+         ============================================================ -->
+    <UI Id="InstallationUI">
+
+      <!-- Custom text styles for consistent dialog typography -->
+      <TextStyle Id="WixUI_Font_BiggerB" FaceName="Segoe UI" Size="12" Bold="no"/>
+      <TextStyle Id="MainTitle"          FaceName="Segoe UI" Size="10" Bold="yes"/>
+
+      <!-- Include WiX common dialogs and progress UI -->
+      <UIRef Id="WixUI_Common"/>
+      <UIRef Id="WixUI_ErrorProgressText"/>
+
+      <!-- Base sequence: InstallDir (simplified flow) -->
+      <ui:WixUI Id="WixUI_InstallDir"/>
+
+      <!-- Inject custom configuration dialog (defined separately) -->
+      <DialogRef Id="HostConfigurationDlg"/>
+    </UI>
+
+    <!-- ============================================================
+         LOGGING CONFIGURATION
+         ============================================================ -->
+    <!-- Enables MSI verbose log entries (useful for debugging CA) -->
+    <Property Id="MsiLogging" Value="v"/>
+
+  </Package>
+</Wix>

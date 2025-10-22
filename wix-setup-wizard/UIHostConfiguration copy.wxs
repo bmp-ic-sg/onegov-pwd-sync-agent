@@ -1,0 +1,122 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+	<Fragment>
+		<Binary Id="InfoBmp" SourceFile="asset\info_16_16colors.bmp" />
+		<UI Id="HostConfigurationUI">
+			<UIRef Id="WixUI_Common"/>
+			<Dialog Id="HostConfigurationDlg" Width="370" Height="270" Title="[ProductName] Setup">
+
+				<!-- HEADER -->
+				<Control Id="BannerBmp"		Type="Bitmap" 	X="0" 	Y="0" 	Width="370" Height="44"	TabSkip="yes" Text="WixUI_Bmp_Banner"/>
+				<Control Id="BannerTitle" 	Type="Text" 	X="14" 	Y="6" 	Width="300" Height="16" Transparent="yes" NoPrefix="yes" Text="!(loc.UIHostConfigHeader)"/>
+				<Control Id="BannerSub" 	Type="Text" 	X="27" 	Y="24" 	Width="300" Height="14" Transparent="yes" NoPrefix="yes" Text="!(loc.UIHostConfigDescription)"/>
+				<Control Id="BottomLine" 	Type="Line" 	X="0" 	Y="223" Width="370" Height="0"/>
+
+        		<!-- BODY / CONTENT -->
+				<!-- =======================================================
+					CONNECTION CONFIGURATION SECTION
+					Defines how this Directory Server connects to your OneGov IDM Application Server
+					======================================================= -->
+
+					<!-- =====================
+						OneGov Application Server
+						===================== -->
+					<Control Id="ServerLbl" Type="Text"
+							X="15" Y="64" Width="100" Height="12"
+							Text="OneGov Server URL:" />
+
+					<Control Id="ServerEdit" Type="Edit"
+							X="125" Y="62" Width="230" Height="18"
+							Property="SERVER"
+							ToolTip="Enter the URL of OneGov Application Server (e.g. https://onegov.azlabs.sg/idm)" />
+
+					<!-- =====================
+						Directory Server Hostname
+						===================== -->
+					<Control Id="HostLbl" Type="Text"
+							X="15" Y="94" Width="100" Height="12"
+							Text="Directory Hostname:" />
+
+					<Control Id="HostEdit" Type="Edit"
+							X="125" Y="92" Width="230" Height="18"
+							Property="HOSTNAME"
+							ToolTip="Enter the hostname of directory server (e.g. dc01.domain.local)." />
+
+					<!-- =====================
+						Directory Server IP Address
+						===================== -->
+					<Control Id="IpLbl" Type="Text"
+							X="15" Y="124" Width="100" Height="12"
+							Text="Directory IP Address:" />
+
+					<Control Id="IpEdit" Type="Edit"
+							X="125" Y="122" Width="230" Height="18"
+							Property="IPADDRESS"
+							ToolTip="Enter the IP address of directory server (e.g. 192.168.1.10)" />
+
+					<!-- =====================
+						OneGov Secret Key
+						===================== -->
+					<Control Id="SecretLbl" Type="Text"
+							X="15" Y="154" Width="100" Height="12"
+							Text="Secret Key:" />
+
+					<Control Id="SecretEdit" Type="Edit"
+							X="125" Y="152" Width="230" Height="50"
+							Property="SECRETKEY"
+							Multiline="yes" Sunken="yes"
+							ToolTip="Paste the secret key generated in OneGov IDM." />
+
+				<!-- FOOTER -->
+				<!-- NEXT Button validation -->
+				<!-- IF ... all field filled, do REST call validation to OneGov IDM -->
+					<!-- IF REST call success, go to Verify (Ready to Install) page -->
+					<!-- ELSE ... REST call fail, show popup message -->
+				<!-- ELSE . all field not filled, show popup message -->
+				<Control Id="Back"   Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="Back">
+					<Publish Event="NewDialog" Value="InstallDirDlg" Condition="1"/>
+				</Control>
+				<Control Id="Next"   Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="Next">
+					<Publish Event="NewDialog"   Value="VerifyReadyDlg" Condition="HOSTNAME AND IPADDRESS AND SECRETKEY"/>
+					<Publish Event="SpawnDialog" Value="ConfigErrorDlg" Condition="NOT (HOSTNAME AND IPADDRESS AND SECRETKEY)"/>
+				</Control>
+				<Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="Cancel">
+					<Publish Event="SpawnDialog" Value="CancelDlg" Condition="1"/>
+				</Control>
+			</Dialog>
+
+			<!--<Binary Id="RestCaDll" SourceFile="bin\ValidateAgent.dll"/>
+			<CustomAction Id="ValidateAgent"
+						BinaryRef="RestCaDll"
+						DllEntry="ValidateAgent"
+						Execute="immediate"
+						Return="check"/>
+
+			 On your Next button 
+			<Publish Event="DoAction" Value="ValidateAgent"
+					Condition="HOSTNAME AND IPADDRESS AND SECRETKEY"/>
+			<Publish Event="NewDialog" Value="VerifyReadyDlg"
+					Condition="HOSTNAME AND IPADDRESS AND SECRETKEY AND REST_OK = 1"/>
+			<Publish Event="SpawnDialog" Value="ConfigErrorDlg"
+					Condition="HOSTNAME AND IPADDRESS AND SECRETKEY AND REST_OK <> 1"/>-->
+
+
+
+			<!-- Error dialog if fields are not filled -->
+			<Dialog Id="ConfigErrorDlg" Width="260" Height="120" Title="Missing configuration">
+				<Control Id="Txt" Type="Text" X="15" Y="20" Width="230" Height="40"
+                 Text="Please fill Hostname, IP Address, and Secret Code before continuing."/>
+				<Control Id="OK"  Type="PushButton" X="102" Y="80" Width="56" Height="17" Default="yes" Text="OK">
+					<Publish Event="EndDialog" Value="Return" Condition="1"/>
+				</Control>
+			</Dialog>
+
+			<!-- Navigation -->
+			<Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" 			Condition="0" Order="9980"/>
+			<Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="HostConfigurationDlg"        Condition="1"    Order="9999"/>
+			<Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="HostConfigurationDlg"       Condition="1"    Order="1"/>
+
+		</UI>
+	</Fragment>
+</Wix>
