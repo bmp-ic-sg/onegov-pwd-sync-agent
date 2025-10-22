@@ -16,6 +16,17 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
 
   <Fragment>
+
+    <!-- Binary: Custom Action DLL -->
+    <Binary Id="RestCaDll" SourceFile="bin\ValidateAgent.dll"/>
+
+    <!-- Custom Action: entry point must match your .def export -->
+    <CustomAction Id="ValidateAgent"
+                  BinaryRef="RestCaDll"
+                  DllEntry="ValidateAgent"
+                  Execute="immediate"
+                  Return="check"/>
+
     <!-- ============================================================
          BINARY RESOURCE (used by Info icons or other UI images)
          ============================================================ -->
@@ -55,7 +66,7 @@
                  Text="OneGov Server URL:" />
         <Control Id="ServerEdit" Type="Edit"
                  X="125" Y="62" Width="230" Height="18"
-                 Property="SERVER"
+                 Property="URLHOST"
                  ToolTip="Enter the URL of OneGov Application Server (e.g. https://onegov.azlabs.sg/idm)" />
 
         <!-- Agent Hostname -->
@@ -97,16 +108,22 @@
         </Control>
 
         <!-- Next Button -->
-        <Control Id="Next" Type="PushButton"
-                 X="236" Y="243" Width="56" Height="17"
-                 Default="yes" Text="Next">
+          <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="Next">
+               <!-- 1) Missing fields? -->
+               <Publish Event="SpawnDialog" Value="ConfigErrorDlg"
+                    Condition="NOT (URLHOST AND HOSTNAME AND IPADDRESS AND SECRETKEY)"/>
 
-          <!-- Validation: ensure required fields are present -->
-          <Publish Event="NewDialog"   Value="VerifyReadyDlg"
-                   Condition="HOSTNAME AND IPADDRESS AND SECRETKEY"/>
-          <Publish Event="SpawnDialog" Value="ConfigErrorDlg"
-                   Condition="NOT (HOSTNAME AND IPADDRESS AND SECRETKEY)"/>
-        </Control>
+               <!-- 2) Run CA when fields present -->
+               <Publish Event="DoAction" Value="ValidateAgent"
+                    Condition="URLHOST AND HOSTNAME AND IPADDRESS AND SECRETKEY"/>
+
+               <!-- 3) Branch by result -->
+               <Publish Event="NewDialog" Value="VerifyReadyDlg"
+                    Condition="URLHOST AND HOSTNAME AND IPADDRESS AND SECRETKEY AND REST_OK = 1"/>
+               <Publish Event="SpawnDialog" Value="ConfigErrorDlg"
+                    Condition="URLHOST AND HOSTNAME AND IPADDRESS AND SECRETKEY AND NOT (REST_OK = 1)"/>
+
+          </Control>
 
         <!-- Cancel Button -->
         <Control Id="Cancel" Type="PushButton"
@@ -118,14 +135,12 @@
       </Dialog>
 
       <!-- ============================================================
-           VALIDATION ERROR DIALOG
-           Shown when mandatory fields are missing
+           ERROR DIALOG (shows REST_MSG or generic message)
            ============================================================ -->
-      <Dialog Id="ConfigErrorDlg" Width="260" Height="120" Title="Missing configuration">
-        <Control Id="Txt" Type="Text" X="15" Y="20" Width="230" Height="40"
-                 Text="Please fill OneGov Server URL, Agent Hostname, Agent IP Address, and Secret Key before continuing."/>
-        <Control Id="OK" Type="PushButton" X="102" Y="80" Width="56" Height="17"
-                 Default="yes" Text="OK">
+      <Dialog Id="ConfigErrorDlg" Width="300" Height="140" Title="Validation failed">
+        <Control Id="Txt" Type="Text" X="15" Y="15" Width="270" Height="70"
+                 Text="[REST_MSG]"/>
+        <Control Id="OK" Type="PushButton" X="122" Y="100" Width="56" Height="17" Default="yes" Text="OK">
           <Publish Event="EndDialog" Value="Return" Condition="1"/>
         </Control>
       </Dialog>

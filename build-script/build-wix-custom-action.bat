@@ -104,50 +104,91 @@ echo.
 
 
 :: ============================================================
-:: STEP 4: DETECT WINDOWS SDK VERSION
-:: Purpose:
-::   Automatically detect the latest Windows 10 SDK containing msi.h
-::   and configure INCLUDE/LIB paths accordingly.
+:: STEP 4: DETECT WINDOWS SDK VERSION (safe with parentheses)
 :: ============================================================
-echo %COLOR_CYAN%[STEP 4]%COLOR_RESET% Detect latest Windows SDK version
+echo %COLOR_CYAN%[STEP 4]%COLOR_RESET% Detect Windows SDK (msi.h)
 
-set "SDKROOT=C:\Program Files (x86)\Windows Kits\10"
-set "SDKVER="
 set "FOUND_SDK=0"
+set "SDKINCLUDE="
+set "SDKLIB="
+set "SDKVER="
 
-if not exist "%SDKROOT%\Include" (
-    echo %COLOR_RED%[ERROR]%COLOR_RESET% Windows Kits Include folder not found: %SDKROOT%\Include
-    echo %COLOR_RED%[HINT]%COLOR_RESET% Please install Windows 10 SDK via Visual Studio Installer.
-    exit /b 3
-) else (
-    echo %COLOR_GREEN%[OK]%COLOR_RESET% Windows Kits Include folder found
-)
+:: 4.1 Prefer env from vcvars (Win10/11 SDK)
+if defined WindowsSdkDir if defined WindowsSDKVersion (
+    set "SDKDIRRAW=!WindowsSdkDir!"
+    set "SDKVERRAW=!WindowsSDKVersion!"
+    if "!SDKDIRRAW:~-1!"=="\" set "SDKDIRRAW=!SDKDIRRAW:~0,-1!"
+    if "!SDKVERRAW:~-1!"=="\" set "SDKVERRAW=!SDKVERRAW:~0,-1!"
 
-echo %COLOR_YELLOW%[SCAN]%COLOR_RESET% Scanning available SDK versions under "%SDKROOT%\Include"...
-for /f "tokens=* delims=" %%v in ('dir "%SDKROOT%\Include" /b /ad ^| sort /r') do (
-    if exist "%SDKROOT%\Include\%%v\um\msi.h" (
-        echo %COLOR_GREEN%[FOUND]%COLOR_RESET% Detected usable Windows SDK version: %%v
-        set "SDKVER=%%v"
+    set "SDKINCLUDE=!SDKDIRRAW!\Include\!SDKVERRAW!"
+    set "SDKLIB=!SDKDIRRAW!\Lib\!SDKVERRAW!"
+    set "SDKVER=!SDKVERRAW!"
+
+    echo !COLOR_YELLOW![INFO]!COLOR_RESET! Env WindowsSdkDir=!SDKDIRRAW!
+    echo !COLOR_YELLOW![INFO]!COLOR_RESET! Env WindowsSDKVersion=!SDKVERRAW!
+    echo !COLOR_WHITE![CHECK]!COLOR_RESET! Looking for "!SDKINCLUDE!\um\msi.h"
+
+    if exist "!SDKINCLUDE!\um\msi.h" (
         set "FOUND_SDK=1"
-        goto :_breakSDK
+        echo !COLOR_GREEN![FOUND]!COLOR_RESET! Using SDK from env: !SDKVER!
     ) else (
-        echo %COLOR_WHITE%   Skipping %%v (no msi.h found)
+        echo !COLOR_YELLOW![SKIP]!COLOR_RESET! Env SDK missing msi.h at "!SDKINCLUDE!\um\msi.h"
     )
 )
 
-:_breakSDK
-if "%FOUND_SDK%"=="0" (
-    echo %COLOR_RED%[ERROR]%COLOR_RESET% No valid Windows SDK found in "%SDKROOT%\Include"
-    echo %COLOR_RED%[HINT]%COLOR_RESET% Please install Windows 10 SDK with 'Desktop Development with C++'.
+
+:: 4.2 Fallback scan only if not found
+if "!FOUND_SDK!"=="0" (
+    set "SDKROOT=C:\Program Files (x86)\Windows Kits\10"
+    echo %COLOR_WHITE%[CHECK]%COLOR_RESET% SDKROOT=!SDKROOT!
+    if not exist "!SDKROOT!\Include" (
+        echo %COLOR_RED%[ERROR]%COLOR_RESET% Windows Kits Include folder not found: !SDKROOT!\Include
+        echo %COLOR_RED%[HINT]%COLOR_RESET% Install Windows 10/11 SDK via Visual Studio Installer.
+        exit /b 3
+    )
+    echo %COLOR_YELLOW%[SCAN]%COLOR_RESET% dir "!SDKROOT!\Include" /b /ad ^| sort /r
+    for /f "usebackq tokens=* delims=" %%v in (`dir "!SDKROOT!\Include" /b /ad ^| sort /r`) do (
+        echo %COLOR_WHITE%[TRY]%COLOR_RESET% Checking "%%v" → "!SDKROOT!\Include\%%v\um\msi.h"
+        if exist "!SDKROOT!\Include\%%v\um\msi.h" (
+            set "SDKINCLUDE=!SDKROOT!\Include\%%v"
+            set "SDKLIB=!SDKROOT!\Lib\%%v"
+            set "SDKVER=%%v"
+            set "FOUND_SDK=1"
+            echo %COLOR_GREEN%[FOUND]%COLOR_RESET% SDK version: %%v
+            goto :_sdk_found
+        ) else (
+            echo %COLOR_WHITE%   Skipping %%v (no msi.h)
+        )
+    )
+)
+
+:_sdk_found
+if "!FOUND_SDK!"=="0" (
+    echo %COLOR_RED%[ERROR]%COLOR_RESET% No valid Windows SDK with msi.h found.
+    echo %COLOR_RED%[HINT]%COLOR_RESET% Ensure 'Windows SDK' and 'MSI' components are installed.
     exit /b 4
 )
 
-echo %COLOR_YELLOW%[INIT]%COLOR_RESET% Using Windows SDK version %SDKVER%
-set "INCLUDE=%INCLUDE%;%SDKROOT%\Include\%SDKVER%\um"
-set "LIB=%LIB%;%SDKROOT%\Lib\%SDKVER%\um\x64"
+echo %COLOR_YELLOW%[INIT]%COLOR_RESET% Using Windows SDK version !SDKVER!
+echo %COLOR_WHITE%[PATH]%COLOR_RESET% SDKINCLUDE=!SDKINCLUDE!
+echo %COLOR_WHITE%[PATH]%COLOR_RESET% SDKLIB=!SDKLIB!
+
+:: Include full trees: shared + ucrt + um
+if defined INCLUDE (set "INCLUDE=!INCLUDE!;") else (set "INCLUDE=")
+if defined LIB (set "LIB=!LIB!;") else (set "LIB=")
+
+set "INCLUDE=!INCLUDE!!SDKINCLUDE!\shared;!SDKINCLUDE!\ucrt;!SDKINCLUDE!\um"
+set "LIB=!LIB!!SDKLIB!\ucrt\x64;!SDKLIB!\um\x64"
+
+echo %COLOR_WHITE%[CHECK]%COLOR_RESET% msi.lib → "!SDKLIB!\um\x64\msi.lib"
+if not exist "!SDKLIB!\um\x64\msi.lib" (
+    echo %COLOR_RED%[ERROR]%COLOR_RESET% msi.lib not found at "!SDKLIB!\um\x64\msi.lib"
+    echo %COLOR_RED%[HINT]%COLOR_RESET% Repair Windows SDK: include "MSI" libraries.
+    exit /b 4
+)
+
 echo %COLOR_GREEN%[OK]%COLOR_RESET% Windows SDK environment configured
 echo.
-
 
 :: ============================================================
 :: STEP 5: COMPILE CUSTOM ACTION DLL

@@ -1,36 +1,5 @@
 // =============================================================================
-//  ONEGOV PASSWORD AGENT - ValidateAgent.c
-//
-//  Purpose:
-//    MSI/WiX Custom Action DLL that performs a simple REST validation step
-//    during installer runtime. Designed to confirm OneGov connectivity
-//    before proceeding to installation.
-//
-//  Behavior:
-//    1. Reads HOSTNAME, IPADDRESS, and SECRETKEY from MSI properties.
-//    2. Builds JSON payload and performs an HTTPS POST to demo endpoint.
-//    3. Parses the HTTP response; if contains "token", marks success.
-//    4. Sets REST_OK / REST_MSG properties for WiX navigation logic.
-//
-//  Notes:
-//    • This version uses https://reqres.in as demo endpoint (no real API call).
-//    • Always returns ERROR_SUCCESS so the UI never crashes.
-//    • MSI logs show the detailed steps if logging is enabled.
-//
-//  Build Command (x64 Native Tools):
-//    cl /LD ValidateAgent.c /Fe:ValidateAgent.dll msi.lib winhttp.lib ^
-//       /DUNICODE /D_UNICODE /W4 /WX- /Zi /nologo /MD /link /DEF:ValidateAgent.def
-//
-//  WiX Integration (example):
-//    <Binary Id="RestCaDll" SourceFile="bin\ValidateAgent.dll"/>
-//    <CustomAction Id="ValidateAgent" BinaryRef="RestCaDll"
-//                  DllEntry="ValidateAgent" Execute="immediate" Return="check"/>
-//    <Publish Event="DoAction" Value="ValidateAgent"
-//             Condition="HOSTNAME AND IPADDRESS AND SECRETKEY"/>
-//    <Publish Event="NewDialog" Value="VerifyReadyDlg"
-//             Condition="REST_OK = 1"/>
-//    <Publish Event="SpawnDialog" Value="ConfigErrorDlg"
-//             Condition="REST_OK <> 1"/>
+//  ONEGOV PASSWORD AGENT - ValidateAgent.c   (C / x64)  [VERBOSE LOGGING]
 // =============================================================================
 
 #define UNICODE
@@ -45,35 +14,159 @@
 #pragma comment(lib, "msi.lib")
 #pragma comment(lib, "winhttp.lib")
 
+// ------------------------------ DEV SWITCHES ---------------------------------
+// Set to 1 to log first bytes of the HTTP response body (utf-8 -> utf-16)
+#define CA_LOG_BODY_SNIPPET      1
+#define CA_BODY_SNIPPET_MAX_UTF8 256  // bytes
+
+// Set to 1 ONLY in lab/test if you want to ignore bad TLS (self-signed etc.)
+#define CA_ALLOW_INSECURE_TLS    0
+// -----------------------------------------------------------------------------
+
 // ------------------------------------------------------------
 // Constants
 // ------------------------------------------------------------
-static const WCHAR* kHost = L"reqres.in";                // Target host (no "https://")
-static const WCHAR* kPath = L"/api/login";               // REST endpoint path
-static const DWORD  kPort = INTERNET_DEFAULT_HTTPS_PORT; // 443 (HTTPS)
-static const DWORD  kTimeoutMs = 7000;                   // Network timeouts
-#define JSON_W_CAPACITY 1024                             // Buffer for payload
+#define JSON_W_CAPACITY 1024
+static const DWORD kTimeoutMs = 7000;
 
 // ------------------------------------------------------------
-// MSI LOGGING HELPERS
+// GLOBAL timing anchor (set at CA start) for [t=...ms] stamps
 // ------------------------------------------------------------
-// Write log entries into MSI log file (visible if logging enabled)
+static ULONGLONG g_t0 = 0;
+
+static void NowStamp(WCHAR* out, size_t cch)
+{
+    if (!out || cch == 0) return;
+    ULONGLONG t = GetTickCount64() - g_t0;
+    StringCchPrintfW(out, cch, L"[t=%llu ms] ", (unsigned long long)t);
+}
+
+// ---- single-file dev logger: %TEMP%\OneGovCA.log ----
+static HANDLE g_LogMutex = NULL;
+
+static void FileLogOne_Init(void)
+{
+    if (!g_LogMutex)
+        g_LogMutex = CreateMutexW(NULL, FALSE, L"Global\\OneGovCA-Log"); // cross-process mutex
+}
+
+static void FileLogOne(LPCWSTR text)
+{
+    if (!text || !*text) return;
+
+    FileLogOne_Init();
+    if (g_LogMutex) WaitForSingleObject(g_LogMutex, 5000);
+
+    WCHAR dir[MAX_PATH], file[MAX_PATH];
+    if (!GetTempPathW(_countof(dir), dir)) goto done;
+    StringCchPrintfW(file, _countof(file), L"%sOneGovCA.log", dir);
+
+    HANDLE h = CreateFileW(file,
+                           FILE_APPEND_DATA,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE,
+                           NULL, OPEN_ALWAYS,
+                           FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) goto done;
+
+    // Simple rotation: truncate if > 1 MiB
+    LARGE_INTEGER sz;
+    if (GetFileSizeEx(h, &sz) && sz.QuadPart > (1LL << 20)) {
+        SetFilePointer(h, 0, NULL, FILE_BEGIN);
+        SetEndOfFile(h);
+    }
+
+    SYSTEMTIME st; GetLocalTime(&st);
+    WCHAR line[1600];
+    StringCchPrintfW(line, _countof(line),
+        L"[%04u-%02u-%02u %02u:%02u:%02u.%03u] %s\r\n",
+        st.wYear, st.wMonth, st.wDay,  // <-- fixed here
+        st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
+        text);
+
+    DWORD n;
+    WriteFile(h, line, (DWORD)(lstrlenW(line) * sizeof(WCHAR)), &n, NULL);
+    CloseHandle(h);
+
+done:
+    if (g_LogMutex) ReleaseMutex(g_LogMutex);
+}
+
+
+// ------------------------------------------------------------
+// MSI LOGGING HELPERS  (WARNING so they always appear in /l*vx)
+// ------------------------------------------------------------
 static void LogMessage(MSIHANDLE hInstall, LPCWSTR text)
 {
     if (!text) return;
-    PMSIHANDLE hRec = MsiCreateRecord(1);
+    FileLogOne(text); // <— always write to %TEMP%\OneGovCA-<pid>.log
+
+    MSIHANDLE hRec = MsiCreateRecord(1);
     if (!hRec) return;
     MsiRecordSetStringW(hRec, 0, L"[1]");
     MsiRecordSetStringW(hRec, 1, text);
-    MsiProcessMessage(hInstall, INSTALLMESSAGE_INFO, hRec);
+    MsiProcessMessage(hInstall, INSTALLMESSAGE_WARNING, hRec);
+    MsiCloseHandle(hRec);
 }
 
-static void LogFmt(MSIHANDLE hInstall, LPCWSTR fmt, LPCWSTR a, LPCWSTR b)
+
+// printf-style helpers that prepend the time stamp
+static void LogFmt1(MSIHANDLE hInstall, LPCWSTR fmt, LPCWSTR a)
 {
-    WCHAR buf[512];
-    if (SUCCEEDED(StringCchPrintfW(buf, _countof(buf), fmt,
+    WCHAR buf[768];
+    WCHAR stamp[64]; NowStamp(stamp, _countof(stamp));
+    if (SUCCEEDED(StringCchPrintfW(buf, _countof(buf), L"%s" L"%s",
+                                   stamp, L"")))
+    {
+        WCHAR body[512];
+        if (SUCCEEDED(StringCchPrintfW(body, _countof(body), fmt, a ? a : L"")))
+        {
+            StringCchCatW(buf, _countof(buf), body);
+            LogMessage(hInstall, buf + lstrlenW(stamp)); // stamp added again inside LogMessage, so just send body
+        }
+    }
+}
+
+static void LogFmt2(MSIHANDLE hInstall, LPCWSTR fmt, LPCWSTR a, LPCWSTR b)
+{
+    WCHAR body[768];
+    if (SUCCEEDED(StringCchPrintfW(body, _countof(body), fmt,
                                    a ? a : L"", b ? b : L"")))
-        LogMessage(hInstall, buf);
+        LogMessage(hInstall, body);
+}
+
+// Rich WinHTTP error logging
+static void LogLastError(MSIHANDLE hInstall, LPCWSTR where)
+{
+    DWORD err = GetLastError();
+    WCHAR sys[512] = L"";
+    DWORD got = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                               NULL, err, 0, sys, _countof(sys), NULL);
+    if (!got) StringCchCopyW(sys, _countof(sys), L"(no message)");
+    WCHAR msg[768];
+    StringCchPrintfW(msg, _countof(msg), L"[ERR] %s (GetLastError=%lu) %s",
+                     where, (unsigned long)err, sys);
+    LogMessage(hInstall, msg);
+}
+
+// ------------------------------------------------------------
+// UTIL: mask secret for logs (keep first/last 2 chars)
+// ------------------------------------------------------------
+static void MaskSecret(const wchar_t* src, wchar_t* dst, size_t cchDst)
+{
+    if (!dst || cchDst == 0) return;
+    if (!src || !*src) { StringCchCopyW(dst, cchDst, L"(empty)"); return; }
+
+    size_t n = 0; StringCchLengthW(src, STRSAFE_MAX_CCH, &n);
+    if (n <= 4) { StringCchCopyW(dst, cchDst, L"****"); return; }
+
+    WCHAR tmp[256];
+    size_t keep = 2;
+    size_t mask = n - 2 * keep;
+    if (mask > 200) mask = 200; // cap mask length for log
+    StringCchCopyNW(tmp, _countof(tmp), src, keep);
+    StringCchCatW(tmp, _countof(tmp), L"****");
+    StringCchCatW(tmp, _countof(tmp), src + (n - keep));
+    StringCchCopyW(dst, cchDst, tmp);
 }
 
 // ------------------------------------------------------------
@@ -101,18 +194,29 @@ static wchar_t* GetMsiPropAlloc(MSIHANDLE h, LPCWSTR name)
 
 static void SetMsiPropBool(MSIHANDLE h, LPCWSTR name, BOOL val)
 {
-    MsiSetPropertyW(h, name, val ? L"1" : L"0");
+    UINT rc = MsiSetPropertyW(h, name, val ? L"1" : L"0");
+    if (rc != ERROR_SUCCESS)
+    {
+        WCHAR m[256]; StringCchPrintfW(m, _countof(m),
+            L"[WARN] MsiSetProperty(%s) failed rc=%u", name, rc);
+        LogMessage(h, m);
+    }
 }
 
 static void SetMsiPropMsg(MSIHANDLE h, LPCWSTR name, LPCWSTR msg)
 {
-    MsiSetPropertyW(h, name, msg ? msg : L"");
+    UINT rc = MsiSetPropertyW(h, name, msg ? msg : L"");
+    if (rc != ERROR_SUCCESS)
+    {
+        WCHAR m[256]; StringCchPrintfW(m, _countof(m),
+            L"[WARN] MsiSetProperty(%s,msg) failed rc=%u", name, rc);
+        LogMessage(h, m);
+    }
 }
 
 // ------------------------------------------------------------
 // STRING UTILITY
 // ------------------------------------------------------------
-// Converts UTF-16 wide string → UTF-8 allocated buffer (HeapAlloc).
 static char* WideToUtf8Alloc(const wchar_t* ws)
 {
     if (!ws) return NULL;
@@ -128,49 +232,127 @@ static char* WideToUtf8Alloc(const wchar_t* ws)
     return s;
 }
 
+// Small helper to allocate a UTF-8 copy (used for reqres demo payload)
+static char* DupUtf8(const char* s)
+{
+    if (!s) return NULL;
+    size_t n = strlen(s) + 1;
+    char* p = (char*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (DWORD)n);
+    if (!p) return NULL;
+    memcpy(p, s, n);
+    return p;
+}
+
 // ------------------------------------------------------------
-// HTTP POST FUNCTION (DEMO IMPLEMENTATION)
+// HTTP POST (generic): POST UTF-8 JSON to parsed URL  [S5 flow]
 // ------------------------------------------------------------
-// Performs HTTPS POST to https://reqres.in/api/login using demo credentials.
-// Returns TRUE if response status == 200 and body contains "token".
-static BOOL HttpPostJsonEchoContainsSecret(void)
+static BOOL HttpPostJson(MSIHANDLE hInstall,
+                         LPCWSTR host, INTERNET_PORT port, BOOL secure,
+                         LPCWSTR path, const char* jsonUtf8,
+                         LPCWSTR apiKeyOpt)  // <— new param
 {
     BOOL ok = FALSE;
     HINTERNET hSession = NULL, hConnect = NULL, hRequest = NULL;
 
-    // Hardcoded demo JSON body for ReqRes
-    static const char* kReqResJson =
-        "{\"email\":\"eve.holt@reqres.in\",\"password\":\"cityslicka\"}";
-    const DWORD reqBodyLen = (DWORD)strlen(kReqResJson);
+    if (!host || !*host || !path || !jsonUtf8)
+    {
+        LogMessage(hInstall, L"[S5.0] HttpPostJson: invalid inputs");
+        return FALSE;
+    }
 
-    // --- Session ---
+    LogMessage(hInstall, L"[S5.1] WinHttpOpen session");
     hSession = WinHttpOpen(L"OneGovSetup/1.0",
                            WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                            WINHTTP_NO_PROXY_NAME,
                            WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!hSession) goto done;
+    if (!hSession) { LogLastError(hInstall, L"WinHttpOpen"); goto done; }
 
-    // --- Connect to host ---
-    hConnect = WinHttpConnect(hSession, kHost, kPort, 0);
-    if (!hConnect) goto done;
+    LogFmt1(hInstall, L"[S5.2] WinHttpConnect host=%s", host);
+    hConnect = WinHttpConnect(hSession, host, port, 0);
+    if (!hConnect) { LogLastError(hInstall, L"WinHttpConnect"); goto done; }
 
-    // --- Create POST request ---
-    hRequest = WinHttpOpenRequest(hConnect, L"POST", kPath,
+    DWORD flags = secure ? WINHTTP_FLAG_SECURE : 0;
+    LogFmt1(hInstall, L"[S5.3] WinHttpOpenRequest path=%s", path);
+    hRequest = WinHttpOpenRequest(hConnect, L"POST", path,
                                   NULL, WINHTTP_NO_REFERER,
-                                  WINHTTP_DEFAULT_ACCEPT_TYPES,
-                                  WINHTTP_FLAG_SECURE);
-    if (!hRequest) goto done;
+                                  WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
+    if (!hRequest) { LogLastError(hInstall, L"WinHttpOpenRequest"); goto done; }
 
-    // Apply timeouts for UI responsiveness
+#if CA_ALLOW_INSECURE_TLS
+    if (secure)
+    {
+        DWORD secFlags =
+            SECURITY_FLAG_IGNORE_UNKNOWN_CA |
+            SECURITY_FLAG_IGNORE_CERT_CN_INVALID |
+            SECURITY_FLAG_IGNORE_CERT_DATE_INVALID |
+            SECURITY_FLAG_IGNORE_CERT_WRONG_USAGE;
+        if (!WinHttpSetOption(hRequest, WINHTTP_OPTION_SECURITY_FLAGS,
+                              &secFlags, sizeof(secFlags)))
+        {
+            LogLastError(hInstall, L"WinHttpSetOption(INSECURE_TLS)");
+        }
+        else
+        {
+            LogMessage(hInstall, L"[S5.3a] INSECURE TLS allowed (lab only)");
+        }
+    }
+#endif
+
+    LogMessage(hInstall, L"[S5.4] Set timeouts");
     WinHttpSetTimeouts(hRequest, kTimeoutMs, kTimeoutMs, kTimeoutMs, kTimeoutMs);
 
-    LPCWSTR hdrs = L"Content-Type: application/json; charset=utf-8";
-    if (!WinHttpSendRequest(hRequest, hdrs, (DWORD)-1,
-                            (LPVOID)kReqResJson, reqBodyLen,
-                            reqBodyLen, 0))
-        goto done;
+    // Add our base headers
+    LPCWSTR hdrs =
+        L"Content-Type: application/json; charset=utf-8\r\n"
+        L"Accept: application/json";
+    DWORD bodyLen = (DWORD)strlen(jsonUtf8);
 
-    if (!WinHttpReceiveResponse(hRequest, NULL)) goto done;
+    // If API key provided, add x-api-key: <SECRETKEY>
+    if (apiKeyOpt && *apiKeyOpt)
+    {
+        WCHAR hdrLine[512];
+        if (SUCCEEDED(StringCchPrintfW(hdrLine, _countof(hdrLine),
+                                       L"x-api-key: %s", apiKeyOpt)))
+        {
+            if (!WinHttpAddRequestHeaders(hRequest, hdrLine, (DWORD)-1,
+                                          WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE))
+            {
+                LogLastError(hInstall, L"WinHttpAddRequestHeaders(x-api-key)");
+            }
+            else
+            {
+                // mask for log
+                WCHAR masked[256];
+                size_t n = 0; StringCchLengthW(apiKeyOpt, STRSAFE_MAX_CCH, &n);
+                if (n <= 4) StringCchCopyW(masked, _countof(masked), L"****");
+                else {
+                    StringCchCopyNW(masked, _countof(masked), apiKeyOpt, 2);
+                    StringCchCatW(masked, _countof(masked), L"****");
+                    StringCchCatW(masked, _countof(masked), apiKeyOpt + (n - 2));
+                }
+                LogFmt1(hInstall, L"[S5.h] Added x-api-key=%s", masked);
+            }
+        }
+    }
+
+    WCHAR m[128];
+    StringCchPrintfW(m, _countof(m), L"[S5.5] SendRequest bodyLen=%lu", (unsigned long)bodyLen);
+    LogMessage(hInstall, m);
+
+    if (!WinHttpSendRequest(hRequest, hdrs, (DWORD)-1,
+                            (LPVOID)jsonUtf8, bodyLen,
+                            bodyLen, 0))
+    {
+        LogLastError(hInstall, L"WinHttpSendRequest");
+        goto done;
+    }
+
+    LogMessage(hInstall, L"[S5.6] ReceiveResponse");
+    if (!WinHttpReceiveResponse(hRequest, NULL))
+    {
+        LogLastError(hInstall, L"WinHttpReceiveResponse");
+        goto done;
+    }
 
     // --- Status code ---
     DWORD status = 0, slen = sizeof(status);
@@ -178,136 +360,288 @@ static BOOL HttpPostJsonEchoContainsSecret(void)
                              WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
                              WINHTTP_HEADER_NAME_BY_INDEX,
                              &status, &slen, WINHTTP_NO_HEADER_INDEX))
+    {
+        LogLastError(hInstall, L"WinHttpQueryHeaders(status)");
         goto done;
+    }
+    WCHAR statusMsg[64];
+    StringCchPrintfW(statusMsg, _countof(statusMsg), L"[S5.7] HTTP status=%lu", (unsigned long)status);
+    LogMessage(hInstall, statusMsg);
 
-    // --- Read response body (accumulate) ---
-    char* body = NULL;
+    // Helpful header logging
+    {
+        WCHAR ct[256]; DWORD ctsz = sizeof(ct);
+        if (WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_CONTENT_TYPE,
+                                WINHTTP_HEADER_NAME_BY_INDEX, ct, &ctsz, WINHTTP_NO_HEADER_INDEX))
+            LogFmt1(hInstall, L"[S5.h] Content-Type=%s", ct);
+    }
+
+#if CA_LOG_BODY_SNIPPET
+    // Read a small snippet of body for debugging
     DWORD total = 0;
+    DWORD toReadTotal = CA_BODY_SNIPPET_MAX_UTF8;
+    char  snippet[CA_BODY_SNIPPET_MAX_UTF8 + 1];
+    ZeroMemory(snippet, sizeof(snippet));
+
     for (;;)
     {
         DWORD avail = 0;
-        if (!WinHttpQueryDataAvailable(hRequest, &avail)) break;
+        if (!WinHttpQueryDataAvailable(hRequest, &avail)) { LogLastError(hInstall, L"WinHttpQueryDataAvailable"); break; }
         if (!avail) break;
 
-        char* nb = (char*)HeapReAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
-                                      body, total + avail + 1);
-        if (!nb)
-        {
-            if (body) HeapFree(GetProcessHeap(), 0, body);
-            body = NULL;
-            break;
-        }
-        body = nb;
+        DWORD chunk = avail;
+        if (chunk > toReadTotal - total) chunk = toReadTotal - total;
+        if (chunk == 0) break;
 
         DWORD read = 0;
-        if (!WinHttpReadData(hRequest, body + total, avail, &read))
+        if (!WinHttpReadData(hRequest, snippet + total, chunk, &read))
         {
-            HeapFree(GetProcessHeap(), 0, body);
-            body = NULL;
+            LogLastError(hInstall, L"WinHttpReadData");
             break;
         }
         total += read;
-        body[total] = '\0';
+        if (total >= toReadTotal) break;
     }
+    snippet[total] = '\0';
 
-    // Evaluate success
-    if (status == 200 && body && strstr(body, "\"token\""))
-        ok = TRUE;
+    WCHAR bodyW[512];
+    int need = MultiByteToWideChar(CP_UTF8, 0, snippet, -1, NULL, 0);
+    if (need > 0 && need < (int)_countof(bodyW))
+    {
+        MultiByteToWideChar(CP_UTF8, 0, snippet, -1, bodyW, _countof(bodyW));
+        LogFmt1(hInstall, L"[S5.8] Body(snippet)=%s", bodyW);
+    }
+    else
+    {
+        LogMessage(hInstall, L"[S5.8] Body(snippet)=(unavailable or too large)");
+    }
+#endif
 
-    if (body) HeapFree(GetProcessHeap(), 0, body);
+    if (status == 200) ok = TRUE;
 
 done:
-    if (hRequest) WinHttpCloseHandle(hRequest);
-    if (hConnect) WinHttpCloseHandle(hConnect);
-    if (hSession) WinHttpCloseHandle(hSession);
+    if (hRequest) { LogMessage(hInstall, L"[S5.x] Close handle: request"); WinHttpCloseHandle(hRequest); }
+    if (hConnect) { LogMessage(hInstall, L"[S5.x] Close handle: connect"); WinHttpCloseHandle(hConnect); }
+    if (hSession) { LogMessage(hInstall, L"[S5.x] Close handle: session"); WinHttpCloseHandle(hSession); }
     return ok;
 }
 
 // ------------------------------------------------------------
-// CUSTOM ACTION ENTRY POINT
+// URL PARSER: use WinHttpCrackUrl on URLHOST  [S3 flow]
+// ------------------------------------------------------------
+static BOOL ParseUrl(LPCWSTR url,
+                     WCHAR hostOut[256],
+                     WCHAR pathOut[512],
+                     INTERNET_PORT* portOut,
+                     BOOL* secureOut)
+{
+    if (!url || !*url) return FALSE;
+
+    URL_COMPONENTS uc;
+    ZeroMemory(&uc, sizeof(uc));
+    uc.dwStructSize = sizeof(uc);
+
+    WCHAR host[256] = {0};
+    WCHAR path[512] = {0};
+
+    uc.lpszHostName = host;
+    uc.dwHostNameLength = _countof(host);
+    uc.lpszUrlPath = path;
+    uc.dwUrlPathLength = _countof(path);
+
+    if (!WinHttpCrackUrl(url, 0, 0, &uc))
+        return FALSE;
+
+    if (!host[0]) return FALSE;
+
+    INTERNET_PORT port = uc.nPort;
+    BOOL secure = (uc.nScheme == INTERNET_SCHEME_HTTPS);
+
+    if (!path[0]) StringCchCopyW(path, _countof(path), L"/");
+
+    StringCchCopyW(hostOut, 256, host);
+    StringCchCopyW(pathOut, 512, path);
+    if (portOut) *portOut = port ? port : (secure ? 443 : 80);
+    if (secureOut) *secureOut = secure;
+
+    return TRUE;
+}
+
+// ------------------------------------------------------------
+// CUSTOM ACTION ENTRY POINT  [S1..S7 flow]
 // ------------------------------------------------------------
 UINT __stdcall ValidateAgent(MSIHANDLE hInstall)
 {
-    // --- Retrieve MSI properties ---
+    //g_t0 = GetTickCount64();
+    LogMessage(hInstall, L"[S1.0] ValidateAgent() begin");
+
+    // S1.1 — Read MSI properties (inputs)
+    wchar_t* urlW  = GetMsiPropAlloc(hInstall, L"URLHOST");
     wchar_t* hostW = GetMsiPropAlloc(hInstall, L"HOSTNAME");
     wchar_t* ipW   = GetMsiPropAlloc(hInstall, L"IPADDRESS");
     wchar_t* secW  = GetMsiPropAlloc(hInstall, L"SECRETKEY");
 
-    LogFmt(hInstall, L"[ValidateAgent] HOSTNAME='%s'", hostW, NULL);
-    LogFmt(hInstall, L"[ValidateAgent] IPADDRESS='%s'", ipW,  NULL);
-    LogFmt(hInstall, L"[ValidateAgent] SECRETKEY='%s'", secW, NULL);
+    WCHAR masked[256]; MaskSecret(secW, masked, _countof(masked));
+    LogFmt1(hInstall, L"[S1.1] URLHOST='%s'",  urlW);
+    LogFmt1(hInstall, L"[S1.1] HOSTNAME='%s'", hostW);
+    LogFmt1(hInstall, L"[S1.1] IPADDRESS='%s'",  ipW);
+    LogFmt1(hInstall, L"[S1.1] SECRETKEY(masked)='%s'",  masked);
 
-    // --- Local validation ---
-    if (!hostW || !*hostW || !ipW || !*ipW || !secW || !*secW)
+    // S2.0 — Validate required inputs
+    if (!urlW || !*urlW || !hostW || !*hostW || !ipW || !*ipW || !secW || !*secW)
     {
-        LogMessage(hInstall, L"[ValidateAgent] Missing Host/IP/Secret; aborting.");
+        LogMessage(hInstall, L"[S2.0] Missing URL/Host/IP/Secret");
         SetMsiPropBool(hInstall, L"REST_OK", FALSE);
-        SetMsiPropMsg(hInstall, L"REST_MSG", L"Missing Host/IP/Secret.");
+        SetMsiPropMsg(hInstall, L"REST_MSG", L"Missing URL/Host/IP/Secret.");
+        goto cleanup;
+    }
+    LogMessage(hInstall, L"[S2.1] Input validation passed");
+
+    // S3.0 — Parse URLHOST
+    WCHAR srvHost[256] = {0};
+    WCHAR srvPath[512] = {0};
+    INTERNET_PORT srvPort = 0;
+    BOOL srvSecure = FALSE;
+
+    LogMessage(hInstall, L"[S3.0] Parse URLHOST");
+    if (!ParseUrl(urlW, srvHost, srvPath, &srvPort, &srvSecure))
+    {
+        LogMessage(hInstall, L"[S3.1] Invalid URLHOST (WinHttpCrackUrl failed)");
+        SetMsiPropBool(hInstall, L"REST_OK", FALSE);
+        SetMsiPropMsg(hInstall, L"REST_MSG", L"Invalid URLHOST.");
         goto cleanup;
     }
 
-    // --- Build placeholder JSON ---
-    wchar_t jsonW[JSON_W_CAPACITY];
+    WCHAR fullUrl[256 + 512];
+    StringCchPrintfW(fullUrl, _countof(fullUrl),
+                     L"%s://%s:%u%s",
+                     srvSecure ? L"https" : L"http",
+                     srvHost, (unsigned)srvPort, srvPath);
+    LogFmt2(hInstall, L"[S3.2] Target host=%s path=%s", srvHost, srvPath);
+    LogFmt1(hInstall, L"[S3.3] POST %s", fullUrl);
+
+    // S4.0 — Build JSON body
+/*     wchar_t jsonW[JSON_W_CAPACITY];
+    LogMessage(hInstall, L"[S4.0] Build JSON");
     if (FAILED(StringCchPrintfW(jsonW, _countof(jsonW),
                                 L"{\"hostname\":\"%s\",\"ip\":\"%s\",\"secret\":\"%s\"}",
                                 hostW, ipW, secW)))
     {
-        LogMessage(hInstall, L"[ValidateAgent] Failed to format JSON payload.");
+        LogMessage(hInstall, L"[S4.1] Failed to format JSON");
         SetMsiPropBool(hInstall, L"REST_OK", FALSE);
         SetMsiPropMsg(hInstall, L"REST_MSG", L"Failed to build JSON.");
         goto cleanup;
     }
 
-    // --- Convert to UTF-8 (kept for real API version) ---
+    LogMessage(hInstall, L"[S4.2] Convert JSON to UTF-8");
     char* jsonUtf8 = WideToUtf8Alloc(jsonW);
-    char* secUtf8  = WideToUtf8Alloc(secW);
-    if (!jsonUtf8 || !secUtf8)
+    if (!jsonUtf8)
     {
-        LogMessage(hInstall, L"[ValidateAgent] UTF-8 conversion failed.");
+        LogMessage(hInstall, L"[S4.3] UTF-8 conversion failed");
         SetMsiPropBool(hInstall, L"REST_OK", FALSE);
         SetMsiPropMsg(hInstall, L"REST_MSG", L"UTF-8 conversion failed.");
         goto cleanup;
-    }
+    } */
 
-    // --- Log target URL ---
-    WCHAR fullUrl[256];
-    StringCchPrintfW(fullUrl, _countof(fullUrl), L"https://%s%s", kHost, kPath);
-    LogFmt(hInstall, L"[ValidateAgent] POST %s", fullUrl, NULL);
+    BOOL  isReqresDemo = (_wcsicmp(srvHost, L"reqres.in") == 0) && (wcsstr(srvPath, L"/api/login") != NULL);
+    char* jsonUtf8     = NULL;
 
-    // --- Perform HTTP POST ---
-    BOOL ok = HttpPostJsonEchoContainsSecret();
-
-    // Free transient buffers
-    HeapFree(GetProcessHeap(), 0, jsonUtf8);
-    HeapFree(GetProcessHeap(), 0, secUtf8);
-
-    // --- Set result properties for WiX UI logic ---
-    if (ok)
+    if (isReqresDemo)
     {
-        LogMessage(hInstall, L"[ValidateAgent] Validation SUCCESS (ReqRes token received).");
-        SetMsiPropBool(hInstall, L"REST_OK", TRUE);
-        SetMsiPropMsg(hInstall, L"REST_MSG", L"Validated via ReqRes.");
+        // DEMO mode: email <- HOSTNAME, password <- IPADDRESS
+            LogMessage(hInstall, L"[S4.0] DEMO: reqres.in payload (email=HOSTNAME, password=IPADDRESS)");
+
+            // NOTE: If HOSTNAME/IP ever contained quotes, JSON could break. For typical values it's fine.
+            // If you need strict safety later, we can add a tiny JSON-escape helper.
+            wchar_t jsonW[JSON_W_CAPACITY];
+            if (FAILED(StringCchPrintfW(jsonW, _countof(jsonW),
+                L"{\"email\":\"%s\",\"password\":\"%s\"}",
+                (hostW && *hostW) ? hostW : L"",
+                (ipW   && *ipW)   ? ipW   : L"")))
+            {
+                LogMessage(hInstall, L"[S4.1] Failed to format demo JSON");
+                SetMsiPropBool(hInstall, L"REST_OK", FALSE);
+                SetMsiPropMsg(hInstall, L"REST_MSG", L"Failed to build demo JSON.");
+                goto cleanup;
+            }
+
+            jsonUtf8 = WideToUtf8Alloc(jsonW);
+            if (!jsonUtf8)
+            {
+                LogMessage(hInstall, L"[S4.3] UTF-8 conversion failed (demo JSON)");
+                SetMsiPropBool(hInstall, L"REST_OK", FALSE);
+                SetMsiPropMsg(hInstall, L"REST_MSG", L"UTF-8 conversion failed.");
+                goto cleanup;
+            }
     }
     else
     {
-        LogMessage(hInstall, L"[ValidateAgent] Validation FAILED (ReqRes).");
-        SetMsiPropBool(hInstall, L"REST_OK", FALSE);
-        SetMsiPropMsg(hInstall, L"REST_MSG", L"Server validation failed.");
+        // NORMAL: build JSON from inputs
+        wchar_t jsonW[1024];
+        LogMessage(hInstall, L"[S4.0] Build JSON");
+        if (FAILED(StringCchPrintfW(jsonW, _countof(jsonW),
+                                    L"{\"hostname\":\"%s\",\"ip\":\"%s\",\"secret\":\"%s\"}",
+                                    hostW, ipW, secW)))
+        {
+            LogMessage(hInstall, L"[S4.1] Failed to format JSON");
+            SetMsiPropBool(hInstall, L"REST_OK", FALSE);
+            SetMsiPropMsg(hInstall, L"REST_MSG", L"Failed to build JSON.");
+            goto cleanup;
+        }
+
+        LogMessage(hInstall, L"[S4.2] Convert JSON to UTF-8");
+        jsonUtf8 = WideToUtf8Alloc(jsonW);
+        if (!jsonUtf8)
+        {
+            LogMessage(hInstall, L"[S4.3] UTF-8 conversion failed");
+            SetMsiPropBool(hInstall, L"REST_OK", FALSE);
+            SetMsiPropMsg(hInstall, L"REST_MSG", L"UTF-8 conversion failed.");
+            goto cleanup;
+        }
+    }
+
+    // S5.x — HTTP POST
+    LogMessage(hInstall, L"[S5.0] HTTP POST begin");
+    {
+        BOOL ok = HttpPostJson(hInstall, srvHost, (INTERNET_PORT)srvPort, srvSecure, srvPath, jsonUtf8, secW);
+        HeapFree(GetProcessHeap(), 0, jsonUtf8);
+
+        // S6.0 — Set MSI properties from result
+        if (ok)
+        {
+            LogMessage(hInstall, L"[S6.0] Validation SUCCESS");
+            SetMsiPropBool(hInstall, L"REST_OK", TRUE);
+            //SetMsiPropMsg(hInstall, L"REST_MSG", L"Validated.");
+            SetMsiPropMsg(hInstall, L"REST_MSG", isReqresDemo ? L"Validated via reqres.in demo." : L"Validated.");
+        }
+        else
+        {
+            LogMessage(hInstall, L"[S6.1] Validation FAILED");
+            SetMsiPropBool(hInstall, L"REST_OK", FALSE);
+            //SetMsiPropMsg(hInstall, L"REST_MSG", L"Server validation failed.");
+            SetMsiPropMsg(hInstall, L"REST_MSG", isReqresDemo ? L"reqres.in demo call failed." : L"Server validation failed.");
+        }
     }
 
 cleanup:
-    if (hostW) LocalFree(hostW);
-    if (ipW)   LocalFree(ipW);
-    if (secW)  LocalFree(secW);
-    return ERROR_SUCCESS; // Always return success to avoid MSI abort
-}
+    // S7.x — Cleanup and exit
+    if (urlW)  { LocalFree(urlW);  LogMessage(hInstall, L"[S7.1] Free URLHOST"); }
+    if (hostW) { LocalFree(hostW); LogMessage(hInstall, L"[S7.2] Free HOSTNAME"); }
+    if (ipW)   { LocalFree(ipW);   LogMessage(hInstall, L"[S7.3] Free IPADDRESS"); }
+    if (secW)  { LocalFree(secW);  LogMessage(hInstall, L"[S7.4] Free SECRETKEY"); }
+
+    LogMessage(hInstall, L"[S7.9] ValidateAgent() end");
+    return ERROR_SUCCESS; // never abort MSI
+} 
+ 
 
 // ------------------------------------------------------------
 // DLL ENTRY POINT
 // ------------------------------------------------------------
-BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID)
+BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID lp)
 {
+    UNREFERENCED_PARAMETER(lp);
     if (reason == DLL_PROCESS_ATTACH)
-        DisableThreadLibraryCalls(h); // Reduce thread overhead
+        DisableThreadLibraryCalls(h);
     return TRUE;
 }
