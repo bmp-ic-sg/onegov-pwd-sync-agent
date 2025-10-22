@@ -96,6 +96,7 @@
                  Section="connection" Key="secret"   Value="[SECRETKEY]" Action="addLine"/>
       </Component>
 
+test
     </ComponentGroup>
 
     <!-- ============================================================
