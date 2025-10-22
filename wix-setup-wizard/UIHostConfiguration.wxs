@@ -58,19 +58,19 @@
                  Property="SERVER"
                  ToolTip="Enter the URL of OneGov Application Server (e.g. https://onegov.azlabs.sg/idm)" />
 
-        <!-- Directory Hostname -->
+        <!-- Agent Hostname -->
         <Control Id="HostLbl" Type="Text"
                  X="15" Y="94" Width="100" Height="12"
-                 Text="Directory Hostname:" />
+                 Text="Agent Hostname:" />
         <Control Id="HostEdit" Type="Edit"
                  X="125" Y="92" Width="230" Height="18"
                  Property="HOSTNAME"
                  ToolTip="Enter the hostname of directory server (e.g. dc01.domain.local)." />
 
-        <!-- Directory IP Address -->
+        <!-- Agent IP Address -->
         <Control Id="IpLbl" Type="Text"
                  X="15" Y="124" Width="100" Height="12"
-                 Text="Directory IP Address:" />
+                 Text="Agent IP Address:" />
         <Control Id="IpEdit" Type="Edit"
                  X="125" Y="122" Width="230" Height="18"
                  Property="IPADDRESS"
@@ -81,9 +81,8 @@
                  X="15" Y="154" Width="100" Height="12"
                  Text="Secret Key:" />
         <Control Id="SecretEdit" Type="Edit"
-                 X="125" Y="152" Width="230" Height="50"
+                 X="125" Y="152" Width="230" Height="18"
                  Property="SECRETKEY"
-                 Multiline="yes" Sunken="yes"
                  ToolTip="Paste the secret key generated in OneGov IDM." />
 
         <!-- ============================================================
@@ -124,7 +123,7 @@
            ============================================================ -->
       <Dialog Id="ConfigErrorDlg" Width="260" Height="120" Title="Missing configuration">
         <Control Id="Txt" Type="Text" X="15" Y="20" Width="230" Height="40"
-                 Text="Please fill Hostname, IP Address, and Secret Code before continuing."/>
+                 Text="Please fill OneGov Server URL, Agent Hostname, Agent IP Address, and Secret Key before continuing."/>
         <Control Id="OK" Type="PushButton" X="102" Y="80" Width="56" Height="17"
                  Default="yes" Text="OK">
           <Publish Event="EndDialog" Value="Return" Condition="1"/>
