@@ -238,7 +238,7 @@ for %%R in (OneGovPwdAgent.ini Newtonsoft.Json.dll license.rtf) do (
             exit /b 30
         )
     ) else (
-        echo %COLOR_YELLOW%[WARN]%COLOR_RESET% Missing resource: %%R (skipped)
+        echo %COLOR_YELLOW%[WARN]%COLOR_RESET% Missing resource: %%R → skipped 
     )
 )
 echo %COLOR_GREEN%[OK]%COLOR_RESET% Resource validation complete
