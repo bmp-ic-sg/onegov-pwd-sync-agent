@@ -427,7 +427,7 @@ done:
 }
 
 // ------------------------------------------------------------
-// URL PARSER: use WinHttpCrackUrl on URLHOST  [S3 flow]
+// URL PARSER: use WinHttpCrackUrl on IDMURL  [S3 flow]
 // ------------------------------------------------------------
 static BOOL ParseUrl(LPCWSTR url,
                      WCHAR hostOut[256],
@@ -476,39 +476,25 @@ UINT __stdcall ValidateAgent(MSIHANDLE hInstall)
     LogMessage(hInstall, L"[S1.0] ValidateAgent() begin");
 
     // S1.1 — Read MSI properties (inputs)
-    wchar_t* urlW  = GetMsiPropAlloc(hInstall, L"URLHOST");
-    wchar_t* hostW = GetMsiPropAlloc(hInstall, L"HOSTNAME");
-    wchar_t* ipW   = GetMsiPropAlloc(hInstall, L"IPADDRESS");
-    wchar_t* secW  = GetMsiPropAlloc(hInstall, L"SECRETKEY");
+    wchar_t* urlW  = GetMsiPropAlloc(hInstall, L"IDMURL");
+    wchar_t* secW  = GetMsiPropAlloc(hInstall, L"APIKEY");
 
     WCHAR masked[256]; MaskSecret(secW, masked, _countof(masked));
-    LogFmt1(hInstall, L"[S1.1] URLHOST='%s'",  urlW);
-    LogFmt1(hInstall, L"[S1.1] HOSTNAME='%s'", hostW);
-    LogFmt1(hInstall, L"[S1.1] IPADDRESS='%s'",  ipW);
-    LogFmt1(hInstall, L"[S1.1] SECRETKEY(masked)='%s'",  masked);
+    LogFmt1(hInstall, L"[S1.1] IDMURL='%s'",  urlW);
+    LogFmt1(hInstall, L"[S1.1] APIKEY(masked)='%s'",  masked);
 
-    // S2.0 — Validate required inputs
-    if (!urlW || !*urlW || !hostW || !*hostW || !ipW || !*ipW || !secW || !*secW)
-    {
-        LogMessage(hInstall, L"[S2.0] Missing URL/Host/IP/Secret");
-        SetMsiPropBool(hInstall, L"REST_OK", FALSE);
-        SetMsiPropMsg(hInstall, L"REST_MSG", L"Missing URL/Host/IP/Secret.");
-        goto cleanup;
-    }
-    LogMessage(hInstall, L"[S2.1] Input validation passed");
-
-    // S3.0 — Parse URLHOST
+    // S3.0 — Parse IDMURL
     WCHAR srvHost[256] = {0};
     WCHAR srvPath[512] = {0};
     INTERNET_PORT srvPort = 0;
     BOOL srvSecure = FALSE;
 
-    LogMessage(hInstall, L"[S3.0] Parse URLHOST");
+    LogMessage(hInstall, L"[S3.0] Parse IDMURL");
     if (!ParseUrl(urlW, srvHost, srvPath, &srvPort, &srvSecure))
     {
-        LogMessage(hInstall, L"[S3.1] Invalid URLHOST (WinHttpCrackUrl failed)");
+        LogMessage(hInstall, L"[S3.1] Invalid IDMURL (WinHttpCrackUrl failed)");
         SetMsiPropBool(hInstall, L"REST_OK", FALSE);
-        SetMsiPropMsg(hInstall, L"REST_MSG", L"Invalid URLHOST.");
+        SetMsiPropMsg(hInstall, L"REST_MSG", L"Invalid OneGov IDM server URL (e.g. https://onegov.azlabs.sg).");
         goto cleanup;
     }
 
@@ -524,8 +510,8 @@ UINT __stdcall ValidateAgent(MSIHANDLE hInstall)
 /*     wchar_t jsonW[JSON_W_CAPACITY];
     LogMessage(hInstall, L"[S4.0] Build JSON");
     if (FAILED(StringCchPrintfW(jsonW, _countof(jsonW),
-                                L"{\"hostname\":\"%s\",\"ip\":\"%s\",\"secret\":\"%s\"}",
-                                hostW, ipW, secW)))
+                                L"{\"secret\":\"%s\"}",
+                                 secW)))
     {
         LogMessage(hInstall, L"[S4.1] Failed to format JSON");
         SetMsiPropBool(hInstall, L"REST_OK", FALSE);
@@ -548,31 +534,18 @@ UINT __stdcall ValidateAgent(MSIHANDLE hInstall)
 
     if (isReqresDemo)
     {
-        // DEMO mode: email <- HOSTNAME, password <- IPADDRESS
-            LogMessage(hInstall, L"[S4.0] DEMO: reqres.in payload (email=HOSTNAME, password=IPADDRESS)");
+        // DEMO mode
+        LogMessage(hInstall, L"[S4.0] DEMO: reqres.in payload (email=eve.holt@reqres.in, password=cityslicka)");
+        static const wchar_t* kReqResJsonW = L"{\"email\":\"eve.holt@reqres.in\",\"password\":\"cityslicka\"}";
+        jsonUtf8 = WideToUtf8Alloc(kReqResJsonW);
 
-            // NOTE: If HOSTNAME/IP ever contained quotes, JSON could break. For typical values it's fine.
-            // If you need strict safety later, we can add a tiny JSON-escape helper.
-            wchar_t jsonW[JSON_W_CAPACITY];
-            if (FAILED(StringCchPrintfW(jsonW, _countof(jsonW),
-                L"{\"email\":\"%s\",\"password\":\"%s\"}",
-                (hostW && *hostW) ? hostW : L"",
-                (ipW   && *ipW)   ? ipW   : L"")))
-            {
-                LogMessage(hInstall, L"[S4.1] Failed to format demo JSON");
-                SetMsiPropBool(hInstall, L"REST_OK", FALSE);
-                SetMsiPropMsg(hInstall, L"REST_MSG", L"Failed to build demo JSON.");
-                goto cleanup;
-            }
-
-            jsonUtf8 = WideToUtf8Alloc(jsonW);
-            if (!jsonUtf8)
-            {
-                LogMessage(hInstall, L"[S4.3] UTF-8 conversion failed (demo JSON)");
-                SetMsiPropBool(hInstall, L"REST_OK", FALSE);
-                SetMsiPropMsg(hInstall, L"REST_MSG", L"UTF-8 conversion failed.");
-                goto cleanup;
-            }
+        if (!jsonUtf8)
+        {
+            LogMessage(hInstall, L"[S4.3] UTF-8 conversion failed (demo JSON)");
+            SetMsiPropBool(hInstall, L"REST_OK", FALSE);
+            SetMsiPropMsg(hInstall, L"REST_MSG", L"UTF-8 conversion failed.");
+            goto cleanup;
+        }
     }
     else
     {
@@ -580,8 +553,8 @@ UINT __stdcall ValidateAgent(MSIHANDLE hInstall)
         wchar_t jsonW[1024];
         LogMessage(hInstall, L"[S4.0] Build JSON");
         if (FAILED(StringCchPrintfW(jsonW, _countof(jsonW),
-                                    L"{\"hostname\":\"%s\",\"ip\":\"%s\",\"secret\":\"%s\"}",
-                                    hostW, ipW, secW)))
+                                    L"{\"secret\":\"%s\"}",
+                                     secW)))
         {
             LogMessage(hInstall, L"[S4.1] Failed to format JSON");
             SetMsiPropBool(hInstall, L"REST_OK", FALSE);
@@ -611,23 +584,19 @@ UINT __stdcall ValidateAgent(MSIHANDLE hInstall)
         {
             LogMessage(hInstall, L"[S6.0] Validation SUCCESS");
             SetMsiPropBool(hInstall, L"REST_OK", TRUE);
-            //SetMsiPropMsg(hInstall, L"REST_MSG", L"Validated.");
-            SetMsiPropMsg(hInstall, L"REST_MSG", isReqresDemo ? L"Validated via reqres.in demo." : L"Validated.");
+            SetMsiPropMsg(hInstall, L"REST_MSG", L"Validated.");
         }
         else
         {
             LogMessage(hInstall, L"[S6.1] Validation FAILED");
             SetMsiPropBool(hInstall, L"REST_OK", FALSE);
-            //SetMsiPropMsg(hInstall, L"REST_MSG", L"Server validation failed.");
-            SetMsiPropMsg(hInstall, L"REST_MSG", isReqresDemo ? L"reqres.in demo call failed." : L"Server validation failed.");
+            SetMsiPropMsg(hInstall, L"REST_MSG", L"Unable to validate your connection settings. Check the OneGov IDM server URL, API key, and network, then try again. If the issue persists, contact your administrator.");
         }
     }
 
 cleanup:
     // S7.x — Cleanup and exit
-    if (urlW)  { LocalFree(urlW);  LogMessage(hInstall, L"[S7.1] Free URLHOST"); }
-    if (hostW) { LocalFree(hostW); LogMessage(hInstall, L"[S7.2] Free HOSTNAME"); }
-    if (ipW)   { LocalFree(ipW);   LogMessage(hInstall, L"[S7.3] Free IPADDRESS"); }
+    if (urlW)  { LocalFree(urlW);  LogMessage(hInstall, L"[S7.1] Free IDMURL"); }
     if (secW)  { LocalFree(secW);  LogMessage(hInstall, L"[S7.4] Free SECRETKEY"); }
 
     LogMessage(hInstall, L"[S7.9] ValidateAgent() end");

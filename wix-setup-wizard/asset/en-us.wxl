@@ -12,7 +12,7 @@
 	<String Id="WelcomeDlgTitle"
 	        Value="{\WixUI_Font_BiggerB}Welcome to [ProductName] Setup Wizard"/>
 	<String Id="WelcomeDlgDescription"
-	        Value="This Setup Wizard will install [ProductName] on your computer. Click Next to continue or Cancel to exit the Setup Wizard.&#x0D;&#x0A;&#x0D;&#x0A;Please configure Hostname, IP Address, and Secret Key from OneGov IDM before installation."/>
+	        Value="This Setup Wizard will install [ProductName] on your computer. Click Next to continue or Cancel to exit the Setup Wizard."/>
 
 	<!-- ============================================================
 	     MAINTENANCE DIALOG (Modify / Repair / Remove mode)
@@ -44,6 +44,6 @@
 	<String Id="UIHostConfigHeader"
 	        Value="{\MainTitle}OneGov IDM Connection Settings"/>
 	<String Id="UIHostConfigDescription"
-	        Value="Enter OneGov and Directory Server details, then click Next."/>
+	        Value="Enter connection details, then click Next."/>
 
 </WixLocalization>

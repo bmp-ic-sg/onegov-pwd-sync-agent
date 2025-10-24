@@ -63,12 +63,10 @@
           <Property Id="URLHOST"    Hidden="yes"/>
           <Property Id="HOSTNAME"  Hidden="yes"/>
           <Property Id="IPADDRESS" Hidden="yes"/>
-          <Property Id="SECRETKEY" Hidden="yes"/> -->
+          <Property Id="APIKEY" Hidden="yes"/> -->
 
-          <Property Id="URLHOST"   Secure="yes" />
-          <Property Id="HOSTNAME"  Secure="yes" />
-          <Property Id="IPADDRESS" Secure="yes" />
-          <Property Id="SECRETKEY" Hidden="yes" Secure="yes" />
+          <Property Id="IDMURL"   Secure="yes" />
+          <Property Id="APIKEY" Hidden="yes" Secure="yes" />
           <Property Id="REST_OK"   Secure="yes" />
           <Property Id="REST_MSG"  Secure="yes" />
 
@@ -95,12 +93,8 @@
                     <!-- Each property written as line under [connection] -->
                     <IniFile Id="CfgServer" Name="config.ini"
                          Section="connection" Key="server"   Value="[SERVER]"    Action="addLine"/>
-                    <IniFile Id="CfgHost"   Name="config.ini"
-                         Section="connection" Key="hostname" Value="[HOSTNAME]"  Action="addLine"/>
-                    <IniFile Id="CfgIp"     Name="config.ini"
-                         Section="connection" Key="ip"       Value="[IPADDRESS]" Action="addLine"/>
                     <IniFile Id="CfgSecret" Name="config.ini"
-                         Section="connection" Key="secret"   Value="[SECRETKEY]" Action="addLine"/>
+                         Section="connection" Key="secret"   Value="[APIKEY]" Action="addLine"/>
                </Component>
           </ComponentGroup>
 
