@@ -31,7 +31,7 @@
 
           <!-- ============================================================
                CONTROL PANEL / ARP CONFIGURATION
-          ============================================================ -->
+               ============================================================ -->
           <!-- Icon displayed in Windows "Programs and Features" -->
           <Icon Id="AppIcon" SourceFile="asset\app.ico"/>
           <Property Id="ARPPRODUCTICON" Value="AppIcon"/>
@@ -59,12 +59,7 @@
           <!-- ============================================================
                INSTALLATION PROPERTIES (USER INPUT)
                ============================================================ -->
-          <!-- Values collected from custom dialog (HostConfigurationDlg) 
-          <Property Id="URLHOST"    Hidden="yes"/>
-          <Property Id="HOSTNAME"  Hidden="yes"/>
-          <Property Id="IPADDRESS" Hidden="yes"/>
-          <Property Id="APIKEY" Hidden="yes"/> -->
-
+          <!-- Values collected from custom dialog (HostConfigurationDlg) -->
           <Property Id="IDMURL"   Secure="yes" />
           <Property Id="APIKEY" Hidden="yes" Secure="yes" />
           <Property Id="REST_OK"   Secure="yes" />
