@@ -5,11 +5,14 @@
 //  Purpose:
 //    Hooks into LSASS password change notifications and forwards events
 //    to both Windows Event Log and a named pipe for user-mode processing.
+//    Hooks into LSASS password change notifications to read the user password
+//    and send it to OneGov Password Sync Agent Service
 //
 //  Key Features:
 //    • Logs password changes via Event Log for audit
-//    • Sends JSON-formatted data through named pipe for agent service
-//    • Supports secure zeroing of password memory
+//    • Sends formatted data through named pipe for OneGov Password Sync Agent Service
+//    • Supports secure zeroing of password memory(clear the memmory after send to
+//      OneGov Password Sync Agent Service)
 //
 //  NOTE:
 //    This module runs inside LSASS (Local Security Authority Subsystem Service).
@@ -18,9 +21,10 @@
 // =============================================================================
 
 #include <windows.h>
-#include <strsafe.h>     // Safe string handling helpers (avoids buffer overflow)
+#include <strsafe.h>
 
-#pragma comment(lib, "advapi32.lib") // For Event Log and security APIs
+// For Event Log and security APIs
+#pragma comment(lib, "advapi32.lib")
 
 
 // ------------------------------------------------------------
@@ -91,13 +95,11 @@ static void LogEvent(LPCWSTR message, LPCWSTR detail)
 // ============================================================
 static void SendToPipe(LPCWSTR text)
 {
-    if (!text) return; // Defensive: null check avoids AV inside LSASS
+    if (!text) return;
 
-    // Calculate required UTF-8 buffer size for conversion
     int need = WideCharToMultiByte(CP_UTF8, 0, text, -1, NULL, 0, NULL, NULL);
     if (need <= 0) return; // Conversion not possible, skip silently
 
-    // Allocate temporary buffer from LSASS local heap
     CHAR* buf = (CHAR*)LocalAlloc(LPTR, need);
     if (!buf) return; // Low-memory condition → skip
 
@@ -179,7 +181,7 @@ __declspec(dllexport) LONG __stdcall PasswordChangeNotify(
 )
 {
     // -------------------------------
-    // Capture username safely
+    // Capture username
     // -------------------------------
     WCHAR userBuf[256] = L"(unknown)";
     if (UserName && UserName->Buffer && UserName->Length > 0)

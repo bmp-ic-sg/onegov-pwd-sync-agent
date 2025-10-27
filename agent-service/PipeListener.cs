@@ -132,7 +132,7 @@ namespace OneGovPwdAgentSync
                                 $"Length={data.Length} chars, Password={data.Password}";
 
                 // Verbose debug log (file + event viewer)
-                // ⚠️ Keep disabled in production for security reasons
+                // Keep disabled in production for security reasons
                 LoggerManager.LogDebug(logMsg);
 
                 // -----------------------------------------------------------------

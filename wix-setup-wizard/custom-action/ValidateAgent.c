@@ -494,7 +494,7 @@ UINT __stdcall ValidateAgent(MSIHANDLE hInstall)
     {
         LogMessage(hInstall, L"[S3.1] Invalid IDMURL (WinHttpCrackUrl failed)");
         SetMsiPropBool(hInstall, L"REST_OK", FALSE);
-        SetMsiPropMsg(hInstall, L"REST_MSG", L"Invalid OneGov IDM server URL (e.g. https://onegov.azlabs.sg).");
+        SetMsiPropMsg(hInstall, L"REST_MSG", L"Invalid OneGov IDM Server URL (e.g. https://onegov.azlabs.sg).");
         goto cleanup;
     }
 
@@ -590,7 +590,7 @@ UINT __stdcall ValidateAgent(MSIHANDLE hInstall)
         {
             LogMessage(hInstall, L"[S6.1] Validation FAILED");
             SetMsiPropBool(hInstall, L"REST_OK", FALSE);
-            SetMsiPropMsg(hInstall, L"REST_MSG", L"Unable to validate your connection settings. Check the OneGov IDM server URL, API key, and network, then try again. If the issue persists, contact your administrator.");
+            SetMsiPropMsg(hInstall, L"REST_MSG", L"Unable to validate your connection settings. Check the OneGov IDM Server URL, API key, and network, then try again. If the issue persists, contact your administrator.");
         }
     }
 
