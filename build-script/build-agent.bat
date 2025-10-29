@@ -259,16 +259,4 @@ if exist "%OUTCS%" echo %COLOR_GREEN%C# :%COLOR_RESET% %OUTCS%
 if exist "%OUTDIR%\OneGovPwdAgent.ini" echo %COLOR_GREEN%INI:%COLOR_RESET% %OUTDIR%\OneGovPwdAgent.ini
 echo %COLOR_WHITE%===============================================================%COLOR_RESET%
 
-:: ============================================================
-:: END OF SCRIPT
-:: Purpose:
-::   Prevents auto-close when running under PowerShell host.
-:: ============================================================
-if /i "%COMSPEC%"=="%SystemRoot%\System32\cmd.exe" (
-    :: CMD shell → auto-exit
-) else (
-    echo [TRACE] Build finished under PowerShell host
-    pause
-)
-
 endlocal

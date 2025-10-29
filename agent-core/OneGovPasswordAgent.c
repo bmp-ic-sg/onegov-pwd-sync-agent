@@ -1,156 +1,165 @@
 // =============================================================================
 //  ONEGOV PASSWORD AGENT
-//  Windows Password Filter DLL (OneGovPasswordAgent.dll)
+//  Windows Password Filter (OneGovPwdAgent-core.dll)
 //
 //  Purpose:
-//    Hooks into LSASS password change notifications and forwards events
-//    to both Windows Event Log and a named pipe for user-mode processing.
-//    Hooks into LSASS password change notifications to read the user password
-//    and send it to OneGov Password Sync Agent Service
+//    This add-on listens for Windows password changes and passes the details
+//    to the OneGov Password Sync Agent (the helper app) so other systems can
+//    stay in sync.
 //
-//  Key Features:
-//    • Logs password changes via Event Log for audit
-//    • Sends formatted data through named pipe for OneGov Password Sync Agent Service
-//    • Supports secure zeroing of password memory(clear the memmory after send to
-//      OneGov Password Sync Agent Service)
+//  What it does:
+//    • Writes a simple note to the Windows Event Log (for auditing).
+//    • Sends a small text message to our helper app through a private
+//      named pipe.
+//    • (Optional/demo) Can clear any copies of the password from memory
+//      after sending, to reduce the chance of leftovers.
 //
-//  NOTE:
-//    This module runs inside LSASS (Local Security Authority Subsystem Service).
-//    LSASS is a critical Windows process; a crash here forces a system restart.
-//    Keep code minimal, non-blocking, and dependency-free.
+//  Important safety notes:
+//    • This runs inside LSASS — a core Windows security process.
+//      If it stalls or crashes, the whole machine can be affected.
+//      That’s why the code is kept short, fast, and avoids waiting.
+//    • We avoid detailed error messages here to keep LSASS stable and quiet.
+//    • Never log real passwords in production. Demo logging must be disabled.
+//
+//  TL;DR:
+//    Listen for password changes → send password change details → keep moving.
 // =============================================================================
+
 
 #include <windows.h>
 #include <strsafe.h>
 
-// For Event Log and security APIs
 #pragma comment(lib, "advapi32.lib")
 
 
 // ------------------------------------------------------------
-// Basic NT-style Unicode string type definition
+// UNICODE_STRING (type)
+// Simple Windows/NT string descriptor used by LSASS to hand us
+// the UserName and NewPassword as UTF-16 text.
+// - Length        : bytes currently used (no trailing NUL)
+// - MaximumLength : total bytes available in Buffer
+// - Buffer        : pointer to the UTF-16 characters
+//   (This is just a wrapper; it does NOT own/allocate memory.)
 // ------------------------------------------------------------
-// Avoids pulling full NT headers from WDK to stay lightweight.
 typedef struct _UNICODE_STRING {
-    USHORT Length;         // Length (in bytes) of current string
-    USHORT MaximumLength;  // Allocated buffer length
-    PWSTR  Buffer;         // Pointer to Unicode characters
+    USHORT Length;
+    USHORT MaximumLength;
+    PWSTR  Buffer;
 } UNICODE_STRING, *PUNICODE_STRING;
 
-// Define STATUS_SUCCESS if not already present (for NTSTATUS return)
+// ------------------------------------------------------------
+// STATUS_SUCCESS
+// NTSTATUS code meaning “success” (zero).
+// ------------------------------------------------------------
 #ifndef STATUS_SUCCESS
 #define STATUS_SUCCESS ((LONG)0x00000000L)
 #endif
 
 
 // ============================================================
-// HELPER: Log to Windows Event Log
-// ============================================================
-// Called internally to write informational entries under
-// the "OneGovPasswordAgent" source name in Event Viewer.
+// HELPER: LogEvent
 //
-// Arguments:
-//   message – short description (e.g., “User changed password”)
-//   detail  – optional secondary message (can be NULL)
+// Purpose:
+//   - Writes a log message to the Windows Event Log.
+//
+// How it’s used:
+//   - Open the Event Viewer → Windows Logs → Application, 
+//     and find the log under source name "OneGovPasswordAgent".
+//   - message : the main line of text
+//   - detail  : an extra line (can be empty)
+//
+// Safety:
+//   - If Windows’ log isn’t available, it just skips and moves on.
+//   - Kept very quick and quiet because this runs inside a critical
+//     Windows process (LSASS).
 // ============================================================
-static void LogEvent(LPCWSTR message, LPCWSTR detail)
-{
-    // Obtain handle to the “OneGovPasswordAgent” event source
+static void LogEvent(LPCWSTR message, LPCWSTR detail){
     HANDLE hEvent = RegisterEventSourceW(NULL, L"OneGovPasswordAgent");
 
-    if (hEvent)
-    {
-        // Create an array of message pointers.
-        // If detail exists → use both strings, otherwise only message.
+    // If cannot open the Windows’ log, skip
+    if (hEvent){
         LPCWSTR msgs[2] = { message, detail };
 
-        // Write entry to Windows Event Log
         ReportEventW(
             hEvent,
-            EVENTLOG_INFORMATION_TYPE,  // Log type: Information
-            0,                          // Category (unused)
-            0,                          // Event ID → use 0 to prevent lookup errors
+            EVENTLOG_INFORMATION_TYPE,  // Information entry
+            0,                          // No category
+            0,                          // Generic ID (no message file)
             NULL,                       // No user SID
-            detail ? 2 : 1,             // Number of strings to log
+            detail ? 2 : 1,             // One or two lines
             0,                          // No binary data
-            msgs,                       // Pointer array of message strings
+            msgs,                       // Text to record
             NULL                        // No raw data
         );
 
-        // Always deregister the handle to prevent LSASS leaks
-        DeregisterEventSource(hEvent);
+        // Close handle to avoid leaks
+        DeregisterEventSource(hEvent);  
     }
-    // If hEvent == NULL → Event Log unavailable, silently ignore.
 }
 
 
 // ============================================================
-// HELPER: Send message to Named Pipe
-// ============================================================
-// Used to forward real-time password change data to the user-mode
-// service (OneGovPwdAgent-service.exe) for further processing.
+// HELPER: SendToPipe
 //
-// Pipe endpoint name: \\.\pipe\OneGovPasswordPipe
-// Messages encoded in UTF-8 and newline-delimited.
+// Purpose:
+//   To sends the password change request to OneGovPwdAgent-service.exe.
+//   The password change details send with named pipe(local transport).
+//
+// Safety:
+//   This code runs inside a very important Windows process. If it slows
+//   down or crashes, the whole computer could be affected. So we keep it
+//   short, safe, and quiet.
 // ============================================================
-static void SendToPipe(LPCWSTR text)
-{
-    if (!text) return;
+static void SendToPipe(LPCWSTR message){
+    // If message is empty, skip
+    if (!message){
+        LogEvent(L"SendToPipe: Empty message, skipping", NULL);
+        return;
+    }
 
-    int need = WideCharToMultiByte(CP_UTF8, 0, text, -1, NULL, 0, NULL, NULL);
-    if (need <= 0) return; // Conversion not possible, skip silently
+    // Validate the message can be converted to UTF-8 from UTF-16
+    int need = WideCharToMultiByte(CP_UTF8, 0, message, -1, NULL, 0, NULL, NULL);
+    if (need <= 0) { 
+        LogEvent(L"SendToPipe: Invalid message, skipping", NULL); 
+        return; 
+    }
 
+    // Calculate the message size, if empty, skip
     CHAR* buf = (CHAR*)LocalAlloc(LPTR, need);
-    if (!buf) return; // Low-memory condition → skip
+    if (!buf) { 
+        LogEvent(L"SendToPipe: Out of memory, skipping", NULL); 
+        return;
+    }
 
-    // Perform actual conversion UTF-16 → UTF-8
-    WideCharToMultiByte(CP_UTF8, 0, text, -1, buf, need, NULL, NULL);
+    // Convert message to UTF-8 
+    WideCharToMultiByte(CP_UTF8, 0, message, -1, buf, need, NULL, NULL);
 
-    // Attempt to connect to existing pipe listener
     HANDLE h = CreateFileW(
-        L"\\\\.\\pipe\\OneGovPasswordPipe", // Named pipe path
-        GENERIC_WRITE,                     // Write-only access
-        0,                                 // No sharing
-        NULL,                              // Default security
-        OPEN_EXISTING,                     // Must already exist (service listening)
-        FILE_ATTRIBUTE_NORMAL,             // Normal file mode
-        NULL                               // No template
+        L"\\\\.\\pipe\\OneGovPasswordPipe",
+        GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL
     );
 
-    if (h != INVALID_HANDLE_VALUE)
-    {
+    if (h != INVALID_HANDLE_VALUE){
         DWORD written = 0;
-
-        // Write main message body (JSON or text)
+        // Send the message
         WriteFile(h, buf, (DWORD)strlen(buf), &written, NULL);
-
-        // Append newline to mark message boundary
         WriteFile(h, "\n", 1, &written, NULL);
-
-        // Always close handle to avoid LSASS handle leaks
+        // Close the pipe connection
         CloseHandle(h);
     }
 
-    // Free temporary UTF-8 buffer
+    // Clean up memory
     LocalFree(buf);
 }
 
 
-// ============================================================
-// REQUIRED EXPORTS
-// ============================================================
-// The functions below are required by Windows Password Filter API.
-// They must be exported with exact names for LSASS to load correctly.
-// ============================================================
-
-
 // ------------------------------------------------------------
-// InitializeChangeNotify()
-// Invoked once when LSASS loads this DLL.
-// Use it to perform lightweight startup initialization.
+// InitializeChangeNotify
+// Purpose:
+//   - Called by LSASS whenever it loads this DLL.
+//   - Do only quick, safe setup here.
 // ------------------------------------------------------------
-__declspec(dllexport) BOOLEAN __stdcall InitializeChangeNotify(void)
-{
+__declspec(dllexport) BOOLEAN __stdcall InitializeChangeNotify(void) {
     // Log that DLL has been successfully loaded by LSASS
     LogEvent(L"OneGovPasswordAgent initialized", NULL);
 
@@ -163,7 +172,7 @@ __declspec(dllexport) BOOLEAN __stdcall InitializeChangeNotify(void)
 
 
 // ------------------------------------------------------------
-// PasswordChangeNotify()
+// PasswordChangeNotify
 // Called by LSASS whenever a password is successfully changed.
 // Parameters:
 //   UserName    → Unicode username of the account
@@ -174,12 +183,9 @@ __declspec(dllexport) BOOLEAN __stdcall InitializeChangeNotify(void)
 //   Executing heavy logic here blocks LSASS thread context.
 //   Keep all processing minimal and non-blocking.
 // ------------------------------------------------------------
-__declspec(dllexport) LONG __stdcall PasswordChangeNotify(
-    PUNICODE_STRING UserName,
-    ULONG RelativeId,
-    PUNICODE_STRING NewPassword
-)
-{
+__declspec(dllexport) LONG __stdcall PasswordChangeNotify( PUNICODE_STRING UserName, 
+                                                           ULONG RelativeId, 
+                                                           PUNICODE_STRING NewPassword ) {
     // -------------------------------
     // Capture username
     // -------------------------------
