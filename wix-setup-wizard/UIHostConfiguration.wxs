@@ -1,24 +1,20 @@
 ﻿<?xml version="1.0" encoding="UTF-8"?>
 <!-- =============================================================================
-     ONEGOV PASSWORD SYNC AGENT – HOST CONFIGURATION DIALOG (WiX v4)
+     ONEGOV PASSWORD SYNC AGENT — HOST CONFIGURATION DIALOG (WiX v4)
      
-     Purpose:
-       Defines the custom UI dialog where administrators enter connection details
-       for linking a Directory Server to the OneGov IDM Application Server.
-
      Features:
-       • Collects SERVER, HOSTNAME, IPADDRESS, APIKEY properties
-       • Performs client-side field validation before continuing
-       • Provides simple “missing input” error dialog
+       • Collects OneGov server URL (IDMURL) and API key (APIKEY)
+       • Performs local field validation before proceeding
+       • Shows a simple “missing input” error dialog
        • Pre-wired navigation with InstallDirDlg and VerifyReadyDlg
-       • Prepared hooks for future REST validation via ValidateAgent.dll
+       • Hook prepared for future REST validation via ValidateAgent.dll
      ============================================================================= -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
      <Fragment>
-          <!-- Binary: Custom Action DLL -->
+          <!-- Binary: custom action DLL (export must match DllEntry) -->
           <Binary Id="RestCaDll" SourceFile="bin\ValidateAgent.dll"/>
 
-          <!-- Custom Action: entry point must match your .def export -->
+          <!-- Custom action: calls ValidateAgent in the DLL -->
           <CustomAction Id="ValidateAgent"
                          BinaryRef="RestCaDll"
                          DllEntry="ValidateAgent"
@@ -26,117 +22,102 @@
                          Return="check"/>
 
           <!-- ============================================================
-               BINARY RESOURCE (used by Info icons or other UI images)
-          ============================================================ -->
+               BINARY RESOURCE (e.g., info icon for UI)
+               ============================================================ -->
           <Binary Id="InfoBmp" SourceFile="asset\info_16_16colors.bmp" />
 
           <UI Id="HostConfigurationUI">
                <UIRef Id="WixUI_Common"/>
 
                <!-- ============================================================
-                    MAIN DIALOG : HostConfigurationDlg
-                    Collects all OneGov + Directory connection parameters
-               ============================================================ -->
+                    MAIN DIALOG: HostConfigurationDlg
+                    Collects OneGov connection parameters
+                    ============================================================ -->
                <Dialog Id="HostConfigurationDlg"
                     Width="370" Height="270"
                     Title="[ProductName] Setup">
 
                     <!-- ============================================================
                          HEADER SECTION (banner & title)
-                    ============================================================ -->
-                    <Control Id="BannerBmp"  Type="Bitmap" X="0"   Y="0"  Width="370" Height="44"
-                              TabSkip="yes" Text="WixUI_Bmp_Banner"/>
-                    <Control Id="BannerTitle" Type="Text" X="14" Y="6" Width="300" Height="16"
-                              Transparent="yes" NoPrefix="yes"
-                              Text="!(loc.UIHostConfigHeader)"/>
-                    <Control Id="BannerSub"   Type="Text" X="27" Y="24" Width="300" Height="14"
-                              Transparent="yes" NoPrefix="yes"
-                              Text="!(loc.UIHostConfigDescription)"/>
-                    <Control Id="BottomLine"  Type="Line" X="0" Y="223" Width="370" Height="0"/>
+                         ============================================================ -->
+                    <Control Id="BannerBmp"   Type="Bitmap" X="0"  Y="0"   Width="370" Height="44" TabSkip="yes" Text="WixUI_Bmp_Banner"/>
+                    <Control Id="BannerTitle" Type="Text"   X="14" Y="6"   Width="300" Height="16" Transparent="yes" NoPrefix="yes" Text="!(loc.UIHostConfigHeader)"/>
+                    <Control Id="BannerSub"   Type="Text"   X="27" Y="24"  Width="300" Height="14" Transparent="yes" NoPrefix="yes" Text="!(loc.UIHostConfigDescription)"/>
+                    <Control Id="BottomLine"  Type="Line"   X="0"  Y="223" Width="370" Height="0"/>
 
                     <!-- ============================================================
-                         BODY SECTION : CONNECTION FIELDS
-                    ============================================================ -->
+                         BODY SECTION: CONNECTION FIELDS
+                         ============================================================ -->
 
-                    <!-- OneGov Application Server URL -->
-                    <Control Id="ServerLbl" Type="Text"
-                              X="15" Y="94" Width="100" Height="12"
-                              Text="OneGov IDM Server:" />
-                    <Control Id="ServerEdit" Type="Edit"
-                              X="125" Y="92" Width="230" Height="18"
-                              Property="IDMURL"
-                              ToolTip="Enter the URL of OneGov IDM Server (e.g. https://onegov.azlabs.sg)" />
+                    <!-- OneGov application server URL -->
+                    <Control Id="ServerLbl" Type="Text" X="15" Y="94" Width="100" Height="12" Text="OneGov IDM Server:" />
+                    <Control Id="ServerEdit" Type="Edit" X="125" Y="92" Width="230" Height="18" Property="IDMURL"
+                              ToolTip="Enter the OneGov IDM server URL (e.g., https://onegov.example.com)" />
 
-                    <!-- OneGov Secret Key (multiline input) -->
-                    <Control Id="SecretLbl" Type="Text"
-                              X="15" Y="124" Width="100" Height="12"
-                              Text="API Key:" />
-                    <Control Id="SecretEdit" Type="Edit"
-                              X="125" Y="122" Width="230" Height="18"
-                              Property="APIKEY"
+                    <!-- OneGov API key -->
+                    <Control Id="SecretLbl" Type="Text" X="15" Y="124" Width="100" Height="12" Text="API Key:" />
+                    <Control Id="SecretEdit" Type="Edit" X="125" Y="122" Width="230" Height="18" Property="APIKEY"
                               ToolTip="Paste the API key generated in OneGov IDM." />
 
                     <!-- ============================================================
-                         FOOTER SECTION : NAVIGATION & VALIDATION
-                    ============================================================ -->
+                         FOOTER SECTION: NAVIGATION & VALIDATION
+                         ============================================================ -->
 
-                    <!-- Back Button -->
-                    <Control Id="Back" Type="PushButton"
-                              X="180" Y="243" Width="56" Height="17"
-                              Text="Back">
+                    <!-- Back button -->
+                    <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="Back">
                          <Publish Event="NewDialog" Value="InstallDirDlg" Condition="1"/>
                     </Control>
 
-                    <!-- Next Button -->
+                    <!-- Next button -->
                     <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="Next">
-                         <!-- 1) Missing fields? -->
-                         <Publish Event="SpawnDialog" Value="ConfigErrorDlgEmpty"
-                              Condition="NOT (IDMURL AND APIKEY)"/>
 
-                         <!-- 2) Run CA when fields present -->
-                         <Publish Event="DoAction" Value="ValidateAgent"
-                              Condition="IDMURL AND APIKEY"/>
+                         <!-- 1) If any required field is missing, show error dialog -->
+                         <Publish Event="SpawnDialog" Value="ConfigErrorDlgEmpty" Condition="NOT (IDMURL AND APIKEY)"/>
 
-                         <!-- 3) Branch by result -->
-                         <Publish Event="NewDialog" Value="VerifyReadyDlg"
-                              Condition="IDMURL AND APIKEY AND REST_OK = 1"/>
-                         <Publish Event="SpawnDialog" Value="ConfigErrorDlg"
-                              Condition="IDMURL AND APIKEY AND NOT (REST_OK = 1)"/>
+                         <!-- 2) Run custom action when fields are present -->
+                         <Publish Event="DoAction" Value="ValidateAgent" Condition="IDMURL AND APIKEY"/>
+
+                         <!-- 3) Branch based on validation result -->
+                         <Publish Event="NewDialog"   Value="VerifyReadyDlg" Condition="IDMURL AND APIKEY AND REST_OK = 1"/>
+                         <Publish Event="SpawnDialog" Value="ConfigErrorDlg" Condition="IDMURL AND APIKEY AND NOT (REST_OK = 1)"/>
 
                     </Control>
 
-                    <!-- Cancel Button -->
-                    <Control Id="Cancel" Type="PushButton"
-                              X="304" Y="243" Width="56" Height="17"
-                              Cancel="yes" Text="Cancel">
+                    <!-- Cancel button -->
+                    <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="Cancel">
                          <Publish Event="SpawnDialog" Value="CancelDlg" Condition="1"/>
                     </Control>
                </Dialog>
 
                <!-- ============================================================
-                     ERROR DIALOG (shows REST_MSG or generic message)
-               ============================================================ -->
+                    ERROR DIALOGS
+                    Shows a generic message or REST_MSG from the custom action
+                    ============================================================ -->
                <Dialog Id="ConfigErrorDlgEmpty" Width="300" Height="140" Title="Missing configuration">
-                    <Control Id="Txt" Type="Text" X="15" Y="15" Width="270" Height="70"
-                              NoPrefix="yes"
-                              Text="Please fill in OneGov IDM Server URL and API Key before continuing."/>
+                    
+                    <Control Id="Txt" Type="Text" X="15" Y="15" Width="270" Height="70" NoPrefix="yes" 
+                              Text="Please enter the OneGov IDM server URL and API key before continuing."/>
+
                     <Control Id="OK" Type="PushButton" X="122" Y="100" Width="56" Height="17" Default="yes" Text="OK">
                          <Publish Event="EndDialog" Value="Return" Condition="1"/>
                     </Control>
+
                </Dialog>
 
-               <Dialog Id="ConfigErrorDlg" Width="300" Height="140" Title="Missing configuration">
+               <Dialog Id="ConfigErrorDlg" Width="300" Height="140" Title="Validation error">
                     <Control Id="Txt" Type="Text" X="15" Y="15" Width="270" Height="70"
                               Text="[REST_MSG]"/>
+
                     <Control Id="OK" Type="PushButton" X="122" Y="100" Width="56" Height="17" Default="yes" Text="OK">
                          <Publish Event="EndDialog" Value="Return" Condition="1"/>
                     </Control>
+                    
                </Dialog>
 
                <!-- ============================================================
                     DIALOG NAVIGATION LINKS
                     Defines flow between standard WiX dialogs
-               ============================================================ -->
+                    ============================================================ -->
                <Publish Dialog="InstallDirDlg" Control="Next"
                          Event="NewDialog" Value="VerifyReadyDlg"
                          Condition="0" Order="9980"/>

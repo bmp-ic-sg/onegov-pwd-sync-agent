@@ -1,43 +1,42 @@
 ﻿<?xml version="1.0" encoding="UTF-8"?>
 <!-- =============================================================================
-     ONEGOV PASSWORD SYNC AGENT - MAIN INSTALLER DEFINITION (WiX v4)
-     
-     Purpose:
-       Defines package metadata, directory layout, feature components, and UI
-       configuration for the OneGov Password Sync Agent installer.
+     ONEGOV PASSWORD SYNC AGENT — MAIN INSTALLER DEFINITION
 
      Key Features:
-       • Branded banner + background images (asset\banner.bmp / dialog.bmp)
-       • Hidden configuration properties populated via custom dialog
-       • Writes config.ini dynamically with entered values
-       • Disables Change/Repair in Control Panel (maintenance mode)
-       • Integrates with custom dialog fragment (HostConfigurationDlg.wxs)
-       • Single feature layout for all components
+       • Per-machine installation with embedded CAB (single-file MSI)
+       • Explicit feature membership: all components are referenced by MainFeature
+       • Copies core DLL to System32:
+           – x64: System64Folder (real System32)
+           – x86: SystemFolder (System32 on 32-bit Windows)
+       • Appends DLL base name to LSA “Notification Packages” (REG_MULTI_SZ)
+       • Installs and controls Windows service (auto start, ownProcess)
+       • Generates OneGovPwdAgent.ini from custom dialog inputs (IDMURL, APIKEY)
+       • Uses WixUI_InstallDir plus custom HostConfigurationDlg
      ============================================================================= -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
      xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
 
      <!-- ============================================================
-       PRODUCT METADATA AND CORE PACKAGE SETTINGS
-       ============================================================ -->
+          PRODUCT METADATA AND CORE PACKAGE SETTINGS
+          ============================================================ -->
      <Package Name="OneGov Password Sync Agent"
-          Manufacturer="Azimuth Labs Pte Ltd"
-          Version="1.0.0.0"
-          ProductCode="*"
-          UpgradeCode="B0E6A3A1-6E7E-4E11-8C0D-5F1F1E3C1234"
-          Scope="perMachine"
-          InstallerVersion="500"
-          Compressed="yes">
+               Manufacturer="Azimuth Labs Pte Ltd"
+               Version="1.0.0.0"
+               ProductCode="*"
+               UpgradeCode="B0E6A3A1-6E7E-4E11-8C0D-5F1F1E3C1234"
+               Scope="perMachine"
+               InstallerVersion="500"
+               Compressed="yes">
 
           <!-- ============================================================
                CONTROL PANEL / ARP CONFIGURATION
                ============================================================ -->
-          <!-- Icon displayed in Windows "Programs and Features" -->
+          <!-- Icon used in Windows “Programs and Features” -->
           <Icon Id="AppIcon" SourceFile="asset\app.ico"/>
           <Property Id="ARPPRODUCTICON" Value="AppIcon"/>
 
-          <!-- Embed the instalation files info the MSI-->
+          <!-- Embed all installation files (CAB) into the MSI -->
           <MediaTemplate EmbedCab="yes" CompressionLevel="high"/>
 
           <!-- ============================================================
@@ -47,7 +46,7 @@
           <WixVariable Id="WixUIBannerBmp" Value="asset\banner.bmp"/>
           <WixVariable Id="WixUIDialogBmp"  Value="asset\dialog.bmp"/>
 
-          <!-- License agreement RTF (displayed in LicenseDlg) -->
+          <!-- License agreement RTF (shown in LicenseDlg) -->
           <WixVariable Id="WixUILicenseRtf" Value="asset\license.rtf"/>
 
           <!-- ============================================================
@@ -56,22 +55,22 @@
           <!-- Root installation directory under Program Files -->
           <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR"/>
 
-          <StandardDirectory Id="ProgramFilesFolder"> 
+          <StandardDirectory Id="ProgramFilesFolder">
                <Directory Id="INSTALLDIR" Name="OneGov Password Sync"/>
           </StandardDirectory>
 
           <!-- ============================================================
                INSTALLATION PROPERTIES (USER INPUT)
                ============================================================ -->
-          <!-- Values collected from custom dialog (HostConfigurationDlg) -->
-          <Property Id="IDMURL"   Secure="yes" />
+          <!-- Values collected from the custom HostConfigurationDlg -->
+          <Property Id="IDMURL"  Secure="yes" />
           <Property Id="APIKEY" Hidden="yes" Secure="yes" />
-          <Property Id="REST_OK"   Secure="yes" />
-          <Property Id="REST_MSG"  Secure="yes" />
+          <Property Id="REST_OK"  Secure="yes" />
+          <Property Id="REST_MSG" Secure="yes" />
 
           <!-- ============================================================
-          COMPONENTS AND FILE PAYLOADS
-          ============================================================ -->
+               COMPONENTS AND FILE PAYLOADS
+               ============================================================ -->
           <InstallExecuteSequence>
                <RemoveIniValues/>
                <WriteIniValues/>
@@ -91,15 +90,18 @@
                     <File Id="OneGovPwdAgentCore" Source="bin\OneGovPwdAgent-core.dll"/>
                </Component>
 
-               <!-- x64: copy to real System32 -->
-               <Component Id="cmpCoreToSystem32_x64" Directory="System64Folder" Guid="*" Condition="VersionNT64">
+               <!-- x64: copy to the real System32 -->
+               <Component Id="cmpCoreToSystem32_x64"
+                         Directory="System64Folder"
+                         Guid="*"
+                         Condition="VersionNT64">
 
                     <File Id="fil_Core_x64"
                          Source="bin\OneGovPwdAgent-core.dll"
                          Name="OneGovPwdAgent-core.dll"
                          KeyPath="yes" />
 
-                    <!-- Append DLL base name (no .dll) to multi-SZ -->
+                    <!-- Append DLL base name (without .dll) to REG_MULTI_SZ -->
                     <RegistryValue
                          Root="HKLM"
                          Key="SYSTEM\CurrentControlSet\Control\Lsa"
@@ -110,13 +112,17 @@
                </Component>
 
                <!-- x86: copy to System32 on 32-bit Windows -->
-               <Component Id="cmpCoreToSystem32_x86" Directory="SystemFolder" Guid="*" Condition="NOT VersionNT64">
+               <Component Id="cmpCoreToSystem32_x86"
+                         Directory="SystemFolder"
+                         Guid="*"
+                         Condition="NOT VersionNT64">
 
                     <File Id="fil_Core_x86"
                          Source="bin\OneGovPwdAgent-core.dll"
                          Name="OneGovPwdAgent-core.dll"
                          KeyPath="yes" />
 
+                    <!-- Append DLL base name (without .dll) to REG_MULTI_SZ -->
                     <RegistryValue
                          Root="HKLM"
                          Key="SYSTEM\CurrentControlSet\Control\Lsa"
@@ -126,40 +132,39 @@
                          Value="OneGovPwdAgent-core" />
                </Component>
 
-               <!-- Service EXE + registration in ONE component -->
+               <!-- Service EXE + registration in one component -->
                <Component Id="cmpOneGovPwdAgentService" Directory="INSTALLDIR" Guid="*">
-               <File Id="OneGovPwdAgentService"
-                    Source="bin\OneGovPwdAgent-service.exe"
-                    KeyPath="yes" />
+                    <File Id="OneGovPwdAgentService"
+                         Source="bin\OneGovPwdAgent-service.exe"
+                         KeyPath="yes" />
 
-               <ServiceInstall
-                    Id="SvcInstall"
-                    Name="OneGovPwdAgentSvc"
-                    DisplayName="OneGov Password Agent Service"
-                    Description="Synchronizes password events with OneGov IDM/Server."
-                    Type="ownProcess"
-                    Start="auto"
-                    ErrorControl="normal"
-                    Vital="yes" />
+                    <ServiceInstall
+                         Id="SvcInstall"
+                         Name="OneGovPwdAgentSvc"
+                         DisplayName="OneGov Password Agent Service"
+                         Description="Synchronizes password events with OneGov IDM."
+                         Type="ownProcess"
+                         Start="auto"
+                         ErrorControl="normal"
+                         Vital="yes" />
 
-               <ServiceControl
-                    Id="SvcControl"
-                    Name="OneGovPwdAgentSvc"
-                    Start="install"
-                    Stop="both"
-                    Remove="uninstall"
-                    Wait="yes" />
+                    <ServiceControl
+                         Id="SvcControl"
+                         Name="OneGovPwdAgentSvc"
+                         Start="install"
+                         Stop="both"
+                         Remove="uninstall"
+                         Wait="yes" />
                </Component>
 
-
-
-               <!-- Writes both keys into INSTALLDIR\OneGovPwdAgent.ini -->
+               <!-- Create and populate INSTALLDIR\OneGovPwdAgent.ini -->
                <Component Id="cmpConfigIni"
                          Directory="INSTALLDIR"
                          Guid="{F3C1B71F-8D7A-4D8C-9C2E-1E6E9A11F0AB}"
                          KeyPath="yes">
 
                     <CreateFolder/>
+
                     <!-- [General Settings] -->
                     <IniFile Id="CfgLogDir"
                               Name="OneGovPwdAgent.ini"
@@ -176,7 +181,7 @@
                               Key="LogLevel"
                               Value="DEBUG"
                               Action="addLine"/>
-                    
+
                     <!-- [OneGov Server configuration] -->
                     <IniFile Id="CfgUrl"
                               Name="OneGovPwdAgent.ini"
@@ -198,10 +203,15 @@
           </ComponentGroup>
 
           <!-- ============================================================
-               FEATURE DEFINITION
+               FEATURE DEFINITION (explicit ComponentRefs)
                ============================================================ -->
-          <Feature Id="MainFeature" Title="OneGov Password Sync Agent Feature" Level="1">
-               <ComponentGroupRef Id="ProductComponents"/>
+          <Feature Id="MainFeature" Title="OneGov Password Sync Agent" Level="1">
+               <ComponentRef Id="cmpNewtonsoft"/>
+               <ComponentRef Id="cmpOneGovPwdAgentCore"/>
+               <ComponentRef Id="cmpCoreToSystem32_x64"/>
+               <ComponentRef Id="cmpCoreToSystem32_x86"/>
+               <ComponentRef Id="cmpOneGovPwdAgentService"/>
+               <ComponentRef Id="cmpConfigIni"/>
           </Feature>
 
           <!-- ============================================================
@@ -217,17 +227,18 @@
                <UIRef Id="WixUI_Common"/>
                <UIRef Id="WixUI_ErrorProgressText"/>
 
-               <!-- Base sequence: InstallDir (simplified flow) -->
+               <!-- Base UI sequence: InstallDir (simplified flow) -->
                <ui:WixUI Id="WixUI_InstallDir"/>
 
-               <!-- Inject custom configuration dialog (defined separately) -->
+               <!-- Inject the custom configuration dialog (defined separately) -->
                <DialogRef Id="HostConfigurationDlg"/>
           </UI>
 
           <!-- ============================================================
                LOGGING CONFIGURATION
                ============================================================ -->
-          <!-- Enables MSI verbose log entries (useful for debugging CA) -->
+          <!-- Enable MSI verbose logging (useful for debugging) -->
           <Property Id="MsiLogging" Value="v"/>
+
      </Package>
 </Wix>
