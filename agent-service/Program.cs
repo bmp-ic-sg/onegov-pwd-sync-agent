@@ -2,19 +2,19 @@
 //  ONEGOV PASSWORD AGENT SYNC SERVICE
 //
 //  Purpose:
-//    Windows Service entry point that hosts the PipeListener responsible for
-//    receiving password change notifications from the LSASS-side agent DLL.
+//    Windows service that hosts the PipeListener to receive password-change
+//    notifications from the LSASS-side agent DLL.
 //
 //  Features:
-//    • Runs as background Windows service ("OneGov PwdAgentSync service")
-//    • Initializes configuration and logging subsystems
-//    • Starts and supervises the PipeListener (Named Pipe server)
+//    • Runs as a background Windows service ("OneGovPasswordAgentService")
+//    • Initializes configuration and logging
+//    • Starts and supervises a named-pipe server (PipeListener)
 //    • Supports both service and console (debug) modes
 //
-//  Design Notes:
-//    • Uses CancellationTokenSource for controlled async shutdown
+//  Design notes:
+//    • Uses CancellationTokenSource for controlled shutdown
 //    • Avoids blocking the Service Control Manager (SCM)
-//    • Ensures graceful cleanup and logging during stop
+//    • Ensures graceful cleanup and logging on stop
 // =============================================================================
 
 using System;
@@ -24,101 +24,60 @@ using System.Threading.Tasks;
 
 namespace OneGovPwdAgentSync
 {
-    /// <summary>
-    /// Main service class for OneGov Password Agent Sync.
-    /// </summary>
     public class OneGovPwdAgentSyncService : ServiceBase
     {
-        // ============================================================
-        // PRIVATE FIELDS
-        // ============================================================
-
-        // Background pipe listener for LSASS messages
         private PipeListener _listener;
-
-        // Token source for cooperative cancellation
         private CancellationTokenSource _cts;
 
-        // ============================================================
-        // CONSTRUCTOR
-        // Sets service display name and default state.
-        // ============================================================
+        // Event Log source name
         public OneGovPwdAgentSyncService()
         {
-            ServiceName = "OneGov PwdAgentSync service";
+            ServiceName = "OneGovPasswordAgentService";
         }
 
-        // ============================================================
-        // ONSTART()
-        // Triggered when the Windows Service Control Manager starts service.
-        // ============================================================
         protected override void OnStart(string[] args)
         {
             try
             {
-                // -------------------------------------------
-                // Load configuration and initialize logger
-                // -------------------------------------------
+                // Load configuration and initialize logging
                 ConfigurationManager.Load();
                 LoggerManager.Initialize();
 
-                LoggerManager.LogFileInfo("=== Starting OneGov PwdAgentSync service ===");
+                LoggerManager.LogFileInfo("=== Starting OneGov Password Agent Service ===");
 
-                // -------------------------------------------
-                // Prepare cooperative cancellation
-                // -------------------------------------------
                 _cts = new CancellationTokenSource();
-
-                // Instantiate the Named Pipe listener
                 _listener = new PipeListener();
 
-                // -------------------------------------------
-                // Launch background task to run listener
-                // -------------------------------------------
-                // Service thread must return quickly, so we offload listener
-                // to a background worker Task.
+                // Run listener on a background task
                 Task.Run(() => _listener.Start(_cts.Token));
-
-                LoggerManager.LogInfo("PipeListener started successfully.");
+                LoggerManager.LogInfo("OneGov Password Agent Service PipeListener started successfully.");
             }
             catch (Exception ex)
             {
-                // Critical startup failure (log + rethrow to notify SCM)
                 LoggerManager.LogError($"Service start failed: {ex}");
                 throw;
             }
         }
 
-        // ============================================================
-        // ONSTOP()
-        // Triggered when SCM or user stops the service.
-        // ============================================================
         protected override void OnStop()
         {
             try
             {
-                LoggerManager.LogFileInfo("Stopping OneGov PwdAgentSync service...");
-
-                // Request cancellation for background worker
+                LoggerManager.LogFileInfo("Stopping OneGov Password Agent Service...");
                 _cts?.Cancel();
-
-                // Allow listener to shut down gracefully
                 _listener?.Stop();
-
-                LoggerManager.LogInfo("Service stopped successfully.");
+                LoggerManager.LogInfo("OneGov Password Agent Service stopped successfully.");
             }
             catch (Exception ex)
             {
-                // Log errors that occur during stop sequence
                 LoggerManager.LogError($"Error during service stop: {ex}");
             }
         }
 
-        // ============================================================
-        // DEBUGRUN()
-        // Allows service to be executed interactively (console mode).
-        // Useful for local debugging and non-service environments.
-        // ============================================================
+        // ------------------------------------------------------------
+        // DebugRun
+        // Runs the service in console mode for local debugging.
+        // ------------------------------------------------------------
         internal void DebugRun()
         {
             OnStart(null);
@@ -128,26 +87,23 @@ namespace OneGovPwdAgentSync
         }
     }
 
-    // ============================================================
-    // PROGRAM ENTRY POINT
-    // Detects execution context and runs either in:
-    //   1. Interactive mode (console)
-    //   2. Windows Service mode (via SCM)
-    // ============================================================
+    // ------------------------------------------------------------
+    // Program entry point
+    // Runs in:
+    //   • Console mode when interactive (debug)
+    //   • Service mode under the SCM otherwise
+    // ------------------------------------------------------------
     static class Program
     {
         static void Main(string[] args)
         {
-            // Check if service is running interactively (e.g., debugging)
             if (Environment.UserInteractive)
             {
-                // Console/debug run for development testing
                 var service = new OneGovPwdAgentSyncService();
                 service.DebugRun();
             }
             else
             {
-                // Run as background service under SCM
                 ServiceBase.Run(new OneGovPwdAgentSyncService());
             }
         }

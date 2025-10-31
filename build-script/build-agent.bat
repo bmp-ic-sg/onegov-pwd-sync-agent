@@ -10,7 +10,7 @@ title Build OneGov Password Sync Agent (Core + Service)
 ::    Automates the complete build pipeline for the OneGov Password Sync Agent.
 ::
 ::  Components:
-::    • Native C core DLL (Password Filter Module)
+::    • Native C core DLL (LSA Notification Package)
 ::    • Managed C# Service Executable (Sync Listener / Relay)
 ::
 ::  Key Features:
@@ -38,7 +38,7 @@ set "COLOR_CYAN=%ESC%[96m"
 set "COLOR_WHITE=%ESC%[97m"
 
 echo %COLOR_CYAN%===============================================================%COLOR_RESET%
-echo %COLOR_CYAN% BUILDING OneGovPwdAgent-core.dll + OneGovPwdAgent-service.exe %COLOR_RESET%
+echo %COLOR_CYAN% BUILDING OneGovPasswordAgent-core.dll + OneGovPasswordAgent-service.exe %COLOR_RESET%
 echo %COLOR_CYAN%===============================================================%COLOR_RESET%
 echo.
 
@@ -51,13 +51,13 @@ echo %COLOR_CYAN%[STEP 1]%COLOR_RESET% Define workspace and file paths
 set "SCRIPT_DIR=%~dp0"
 if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 set "WORKSPACE=%SCRIPT_DIR%\.."
-set "SRC=%WORKSPACE%\agent-core\OneGovPasswordAgent.c"
-set "DEF=%WORKSPACE%\agent-core\OneGovPasswordAgent.def"
+set "SRC=%WORKSPACE%\agent-core\OneGovPasswordAgent-core.c"
+set "DEF=%WORKSPACE%\agent-core\OneGovPasswordAgent-core.def"
 set "CS_DIR=%WORKSPACE%\agent-service"
 set "RES_DIR=%WORKSPACE%\resources"
 set "OUTDIR=%WORKSPACE%\build-output"
-set "OUTDLL=%OUTDIR%\OneGovPwdAgent-core.dll"
-set "OUTCS=%OUTDIR%\OneGovPwdAgent-service.exe"
+set "OUTDLL=%OUTDIR%\OneGovPasswordAgent-core.dll"
+set "OUTCS=%OUTDIR%\OneGovPasswordAgent-service.exe"
 set "DST=%WORKSPACE%\wix-setup-wizard\bin"
 
 echo %COLOR_GREEN%[OK]%COLOR_RESET% Workspace initialized
@@ -69,7 +69,7 @@ echo.
 :: ============================================================
 echo %COLOR_CYAN%[STEP 1.1]%COLOR_RESET% Pre-clean wix-setup-wizard\bin
 if exist "%DST%" (
-  for %%F in ("OneGovPwdAgent-core.dll" "OneGovPwdAgent-service.exe" "Newtonsoft.Json.dll") do (
+  for %%F in ("OneGovPasswordAgent-core.dll" "OneGovPasswordAgent-service.exe" "Newtonsoft.Json.dll") do (
     if exist "%DST%\%%~F" (
       echo %COLOR_YELLOW%[CLEAN]%COLOR_RESET% Deleting "%%~F" from bin...
       del /f /q "%DST%\%%~F" || echo %COLOR_YELLOW%[WARN]%COLOR_RESET% Could not delete %%~F
@@ -235,7 +235,7 @@ echo.
 echo %COLOR_CYAN%[STEP 6]%COLOR_RESET% Copy runtime resources
 echo %COLOR_YELLOW%[CHECK]%COLOR_RESET% Validating and copying resource files...
 
-for %%R in (OneGovPwdAgent.ini Newtonsoft.Json.dll license.rtf) do (
+for %%R in (OneGovPasswordAgent.ini Newtonsoft.Json.dll license.rtf) do (
     if exist "%RES_DIR%\%%R" (
         copy /Y "%RES_DIR%\%%R" "%OUTDIR%\" >nul
         if exist "%OUTDIR%\%%R" (
@@ -254,7 +254,7 @@ echo.
 
 :: ============================================================
 :: STEP 7: COPY selected files → wix-setup-wizard\bin
-::   Only: OneGovPwdAgent-core.dll, OneGovPwdAgent-service.exe, Newtonsoft.Json.dll
+::   Only: OneGovPasswordAgent-core.dll, OneGovPasswordAgent-service.exe, Newtonsoft.Json.dll
 :: ============================================================
 echo %COLOR_CYAN%[STEP 7]%COLOR_RESET% Copy selected files → wix-setup-wizard\bin
 
@@ -269,10 +269,10 @@ set "COPIED_OK=1"
 if exist "%OUTDLL%" (
     echo %COLOR_YELLOW%[COPY]%COLOR_RESET% %OUTDLL% → %DST%
     copy /Y "%OUTDLL%" "%DST%\" >nul || set "COPIED_OK=0"
-    if exist "%DST%\OneGovPwdAgent-core.dll" (
-        echo %COLOR_GREEN%[OK]%COLOR_RESET% Copied OneGovPwdAgent-core.dll
+    if exist "%DST%\OneGovPasswordAgent-core.dll" (
+        echo %COLOR_GREEN%[OK]%COLOR_RESET% Copied OneGovPasswordAgent-core.dll
     ) else (
-        echo %COLOR_RED%[FAIL]%COLOR_RESET% Copy failed: OneGovPwdAgent-core.dll
+        echo %COLOR_RED%[FAIL]%COLOR_RESET% Copy failed: OneGovPasswordAgent-core.dll
         set "COPIED_OK=0"
     )
 ) else (
@@ -284,10 +284,10 @@ if exist "%OUTDLL%" (
 if exist "%OUTCS%" (
     echo %COLOR_YELLOW%[COPY]%COLOR_RESET% %OUTCS% → %DST%
     copy /Y "%OUTCS%" "%DST%\" >nul || set "COPIED_OK=0"
-    if exist "%DST%\OneGovPwdAgent-service.exe" (
-        echo %COLOR_GREEN%[OK]%COLOR_RESET% Copied OneGovPwdAgent-service.exe
+    if exist "%DST%\OneGovPasswordAgent-service.exe" (
+        echo %COLOR_GREEN%[OK]%COLOR_RESET% Copied OneGovPasswordAgent-service.exe
     ) else (
-        echo %COLOR_RED%[FAIL]%COLOR_RESET% Copy failed: OneGovPwdAgent-service.exe
+        echo %COLOR_RED%[FAIL]%COLOR_RESET% Copy failed: OneGovPasswordAgent-service.exe
         set "COPIED_OK=0"
     )
 ) else (
@@ -330,7 +330,7 @@ echo %COLOR_GREEN%✅ Build complete!%COLOR_RESET%
 echo %COLOR_WHITE%Output directory:%COLOR_RESET% %OUTDIR%
 if exist "%OUTDLL%" echo %COLOR_GREEN%DLL:%COLOR_RESET% %OUTDLL%
 if exist "%OUTCS%" echo %COLOR_GREEN%C# :%COLOR_RESET% %OUTCS%
-if exist "%OUTDIR%\OneGovPwdAgent.ini" echo %COLOR_GREEN%INI:%COLOR_RESET% %OUTDIR%\OneGovPwdAgent.ini
+if exist "%OUTDIR%\OneGovPasswordAgent.ini" echo %COLOR_GREEN%INI:%COLOR_RESET% %OUTDIR%\OneGovPasswordAgent.ini
 echo %COLOR_WHITE%Mirrored to:%COLOR_RESET% %DST%
 echo %COLOR_WHITE%===============================================================%COLOR_RESET%
 

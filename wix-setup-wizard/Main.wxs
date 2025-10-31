@@ -10,7 +10,7 @@
            – x86: SystemFolder (System32 on 32-bit Windows)
        • Appends DLL base name to LSA “Notification Packages” (REG_MULTI_SZ)
        • Installs and controls Windows service (auto start, ownProcess)
-       • Generates OneGovPwdAgent.ini from custom dialog inputs (IDMURL, APIKEY)
+       • Generates OneGovPasswordAgent.ini from custom dialog inputs (IDMURL, APIKEY)
        • Uses WixUI_InstallDir plus custom HostConfigurationDlg
      ============================================================================= -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
@@ -86,8 +86,8 @@
                     <File Id="Newtonsoft" Source="bin\Newtonsoft.Json.dll"/>
                </Component>
 
-               <Component Id="cmpOneGovPwdAgentCore" Guid="*">
-                    <File Id="OneGovPwdAgentCore" Source="bin\OneGovPwdAgent-core.dll"/>
+               <Component Id="cmpOneGovPasswordAgentCore" Guid="*">
+                    <File Id="OneGovPasswordAgentCore" Source="bin\OneGovPasswordAgent-core.dll"/>
                </Component>
 
                <!-- x64: copy to the real System32 -->
@@ -97,8 +97,8 @@
                          Condition="VersionNT64">
 
                     <File Id="fil_Core_x64"
-                         Source="bin\OneGovPwdAgent-core.dll"
-                         Name="OneGovPwdAgent-core.dll"
+                         Source="bin\OneGovPasswordAgent-core.dll"
+                         Name="OneGovPasswordAgent-core.dll"
                          KeyPath="yes" />
 
                     <!-- Append DLL base name (without .dll) to REG_MULTI_SZ -->
@@ -108,7 +108,7 @@
                          Name="Notification Packages"
                          Type="multiString"
                          Action="append"
-                         Value="OneGovPwdAgent-core" />
+                         Value="OneGovPasswordAgent-core" />
                </Component>
 
                <!-- x86: copy to System32 on 32-bit Windows -->
@@ -118,8 +118,8 @@
                          Condition="NOT VersionNT64">
 
                     <File Id="fil_Core_x86"
-                         Source="bin\OneGovPwdAgent-core.dll"
-                         Name="OneGovPwdAgent-core.dll"
+                         Source="bin\OneGovPasswordAgent-core.dll"
+                         Name="OneGovPasswordAgent-core.dll"
                          KeyPath="yes" />
 
                     <!-- Append DLL base name (without .dll) to REG_MULTI_SZ -->
@@ -129,20 +129,20 @@
                          Name="Notification Packages"
                          Type="multiString"
                          Action="append"
-                         Value="OneGovPwdAgent-core" />
+                         Value="OneGovPasswordAgent-core" />
                </Component>
 
                <!-- Service EXE + registration in one component -->
-               <Component Id="cmpOneGovPwdAgentService" Directory="INSTALLDIR" Guid="*">
-                    <File Id="OneGovPwdAgentService"
-                         Source="bin\OneGovPwdAgent-service.exe"
+               <Component Id="cmpOneGovPasswordAgentService" Directory="INSTALLDIR" Guid="*">
+                    <File Id="OneGovPasswordAgentService"
+                         Source="bin\OneGovPasswordAgent-service.exe"
                          KeyPath="yes" />
 
                     <ServiceInstall
                          Id="SvcInstall"
-                         Name="OneGovPwdAgentSvc"
+                         Name="OneGovPasswordAgentService"
                          DisplayName="OneGov Password Agent Service"
-                         Description="Synchronizes password events with OneGov IDM."
+                         Description="Synchronizes password change/reset from Domain Controller to OneGov IDM."
                          Type="ownProcess"
                          Start="auto"
                          ErrorControl="normal"
@@ -150,7 +150,7 @@
 
                     <ServiceControl
                          Id="SvcControl"
-                         Name="OneGovPwdAgentSvc"
+                         Name="OneGovPasswordAgentService"
                          Start="install"
                          Stop="both"
                          Remove="uninstall"
@@ -167,7 +167,7 @@
 
                     <!-- [General Settings] -->
                     <IniFile Id="CfgLogDir"
-                              Name="OneGovPwdAgent.ini"
+                              Name="OneGovPasswordAgent.ini"
                               Directory="INSTALLDIR"
                               Section="General Settings"
                               Key="LogDir"
@@ -175,7 +175,7 @@
                               Action="addLine"/>
 
                     <IniFile Id="CfgLogLevel"
-                              Name="OneGovPwdAgent.ini"
+                              Name="OneGovPasswordAgent.ini"
                               Directory="INSTALLDIR"
                               Section="General Settings"
                               Key="LogLevel"
@@ -184,7 +184,7 @@
 
                     <!-- [OneGov Server configuration] -->
                     <IniFile Id="CfgUrl"
-                              Name="OneGovPwdAgent.ini"
+                              Name="OneGovPasswordAgent.ini"
                               Directory="INSTALLDIR"
                               Section="connection"
                               Key="OneGovServer"
@@ -192,7 +192,7 @@
                               Action="addLine"/>
 
                     <IniFile Id="CfgSecret"
-                              Name="OneGovPwdAgent.ini"
+                              Name="OneGovPasswordAgent.ini"
                               Directory="INSTALLDIR"
                               Section="connection"
                               Key="ApiKey"
@@ -207,10 +207,10 @@
                ============================================================ -->
           <Feature Id="MainFeature" Title="OneGov Password Sync Agent" Level="1">
                <ComponentRef Id="cmpNewtonsoft"/>
-               <ComponentRef Id="cmpOneGovPwdAgentCore"/>
+               <ComponentRef Id="cmpOneGovPasswordAgentCore"/>
                <ComponentRef Id="cmpCoreToSystem32_x64"/>
                <ComponentRef Id="cmpCoreToSystem32_x86"/>
-               <ComponentRef Id="cmpOneGovPwdAgentService"/>
+               <ComponentRef Id="cmpOneGovPasswordAgentService"/>
                <ComponentRef Id="cmpConfigIni"/>
           </Feature>
 
