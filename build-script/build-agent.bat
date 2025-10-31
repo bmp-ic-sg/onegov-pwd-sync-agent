@@ -18,6 +18,7 @@ title Build OneGov Password Sync Agent (Core + Service)
 ::    - Loads MSVC build environment for cl.exe
 ::    - Compiles native DLL + managed EXE
 ::    - Validates and copies runtime dependencies
+::    - Mirrors selected artifacts to wix-setup-wizard\bin
 ::    - Provides detailed step-by-step logs with ANSI colors
 ::
 ::  Usage:
@@ -27,7 +28,6 @@ title Build OneGov Password Sync Agent (Core + Service)
 
 :: ============================================================
 :: COLOR INITIALIZATION
-:: Defines ANSI color codes for visualized log output
 :: ============================================================
 for /f "delims=" %%a in ('echo prompt $E^| cmd') do set "ESC=%%a"
 set "COLOR_RESET=%ESC%[0m"
@@ -45,8 +45,6 @@ echo.
 
 :: ============================================================
 :: STEP 1: DEFINE WORKSPACE AND PATHS
-:: Purpose:
-::   Establishes directory layout and key variables.
 :: ============================================================
 echo %COLOR_CYAN%[STEP 1]%COLOR_RESET% Define workspace and file paths
 
@@ -60,15 +58,33 @@ set "RES_DIR=%WORKSPACE%\resources"
 set "OUTDIR=%WORKSPACE%\build-output"
 set "OUTDLL=%OUTDIR%\OneGovPwdAgent-core.dll"
 set "OUTCS=%OUTDIR%\OneGovPwdAgent-service.exe"
+set "DST=%WORKSPACE%\wix-setup-wizard\bin"
 
 echo %COLOR_GREEN%[OK]%COLOR_RESET% Workspace initialized
 echo.
 
 
 :: ============================================================
+:: STEP 1.1: PRE-CLEAN bin artifacts (optional)
+:: ============================================================
+echo %COLOR_CYAN%[STEP 1.1]%COLOR_RESET% Pre-clean wix-setup-wizard\bin
+if exist "%DST%" (
+  for %%F in ("OneGovPwdAgent-core.dll" "OneGovPwdAgent-service.exe" "Newtonsoft.Json.dll") do (
+    if exist "%DST%\%%~F" (
+      echo %COLOR_YELLOW%[CLEAN]%COLOR_RESET% Deleting "%%~F" from bin...
+      del /f /q "%DST%\%%~F" || echo %COLOR_YELLOW%[WARN]%COLOR_RESET% Could not delete %%~F
+    ) else (
+      echo %COLOR_WHITE%[SKIP]%COLOR_RESET% Not found: %%~F
+    )
+  )
+) else (
+  echo %COLOR_WHITE%[INFO]%COLOR_RESET% Bin folder not found yet; it will be created in STEP 7.
+)
+echo.
+
+
+:: ============================================================
 :: STEP 2: CLEAN AND PREPARE OUTPUT FOLDER
-:: Purpose:
-::   Removes old builds and ensures a clean output directory.
 :: ============================================================
 echo %COLOR_CYAN%[STEP 2]%COLOR_RESET% Prepare output folder
 
@@ -85,8 +101,6 @@ echo.
 
 :: ============================================================
 :: STEP 3: SETUP MSVC BUILD ENVIRONMENT
-:: Purpose:
-::   Loads Visual Studio Build Tools to enable cl.exe and link.exe.
 :: ============================================================
 echo %COLOR_CYAN%[STEP 3]%COLOR_RESET% Load Visual Studio Build Tools environment
 
@@ -108,8 +122,6 @@ echo.
 
 :: ============================================================
 :: STEP 4: COMPILE NATIVE CORE DLL
-:: Purpose:
-::   Builds the LSASS password filter (C DLL) used for password sync.
 :: ============================================================
 echo %COLOR_CYAN%[STEP 4]%COLOR_RESET% Compile core native DLL
 
@@ -140,9 +152,6 @@ echo.
 
 :: ============================================================
 :: STEP 5: COMPILE C# SYNCAGENT SERVICE
-:: Purpose:
-::   Builds the managed service component (C#) that communicates with
-::   the core DLL via named pipes.
 :: ============================================================
 echo %COLOR_CYAN%[STEP 5]%COLOR_RESET% Compile C# SyncAgent Service
 
@@ -222,8 +231,6 @@ echo.
 
 :: ============================================================
 :: STEP 6: COPY RUNTIME RESOURCES
-:: Purpose:
-::   Copies supporting files (INI, license, DLLs) into build-output.
 :: ============================================================
 echo %COLOR_CYAN%[STEP 6]%COLOR_RESET% Copy runtime resources
 echo %COLOR_YELLOW%[CHECK]%COLOR_RESET% Validating and copying resource files...
@@ -238,7 +245,7 @@ for %%R in (OneGovPwdAgent.ini Newtonsoft.Json.dll license.rtf) do (
             exit /b 30
         )
     ) else (
-        echo %COLOR_YELLOW%[WARN]%COLOR_RESET% Missing resource: %%R → skipped 
+        echo %COLOR_YELLOW%[WARN]%COLOR_RESET% Missing resource: %%R → skipped
     )
 )
 echo %COLOR_GREEN%[OK]%COLOR_RESET% Resource validation complete
@@ -246,17 +253,85 @@ echo.
 
 
 :: ============================================================
-:: STEP 7: BUILD SUMMARY
-:: Purpose:
-::   Displays final build results and output locations.
+:: STEP 7: COPY selected files → wix-setup-wizard\bin
+::   Only: OneGovPwdAgent-core.dll, OneGovPwdAgent-service.exe, Newtonsoft.Json.dll
 :: ============================================================
-echo %COLOR_CYAN%[STEP 7]%COLOR_RESET% Build summary
+echo %COLOR_CYAN%[STEP 7]%COLOR_RESET% Copy selected files → wix-setup-wizard\bin
+
+if not exist "%DST%" (
+    echo %COLOR_YELLOW%[INIT]%COLOR_RESET% Creating destination folder: "%DST%"
+    mkdir "%DST%" || ( echo %COLOR_RED%[ERROR]%COLOR_RESET% Failed to create "%DST%". & exit /b 40 )
+)
+
+set "COPIED_OK=1"
+
+:: --- File 1: core DLL
+if exist "%OUTDLL%" (
+    echo %COLOR_YELLOW%[COPY]%COLOR_RESET% %OUTDLL% → %DST%
+    copy /Y "%OUTDLL%" "%DST%\" >nul || set "COPIED_OK=0"
+    if exist "%DST%\OneGovPwdAgent-core.dll" (
+        echo %COLOR_GREEN%[OK]%COLOR_RESET% Copied OneGovPwdAgent-core.dll
+    ) else (
+        echo %COLOR_RED%[FAIL]%COLOR_RESET% Copy failed: OneGovPwdAgent-core.dll
+        set "COPIED_OK=0"
+    )
+) else (
+    echo %COLOR_YELLOW%[WARN]%COLOR_RESET% Missing source: %OUTDLL%
+    set "COPIED_OK=0"
+)
+
+:: --- File 2: service EXE
+if exist "%OUTCS%" (
+    echo %COLOR_YELLOW%[COPY]%COLOR_RESET% %OUTCS% → %DST%
+    copy /Y "%OUTCS%" "%DST%\" >nul || set "COPIED_OK=0"
+    if exist "%DST%\OneGovPwdAgent-service.exe" (
+        echo %COLOR_GREEN%[OK]%COLOR_RESET% Copied OneGovPwdAgent-service.exe
+    ) else (
+        echo %COLOR_RED%[FAIL]%COLOR_RESET% Copy failed: OneGovPwdAgent-service.exe
+        set "COPIED_OK=0"
+    )
+) else (
+    echo %COLOR_YELLOW%[WARN]%COLOR_RESET% Missing source: %OUTCS%
+    set "COPIED_OK=0"
+)
+
+:: --- File 3: Newtonsoft.Json.dll (prefer build-output, fallback to agent-service)
+set "JSON_SRC=%OUTDIR%\Newtonsoft.Json.dll"
+if not exist "%JSON_SRC%" if exist "%CS_DIR%\Newtonsoft.Json.dll" set "JSON_SRC=%CS_DIR%\Newtonsoft.Json.dll"
+
+if exist "%JSON_SRC%" (
+    echo %COLOR_YELLOW%[COPY]%COLOR_RESET% %JSON_SRC% → %DST%
+    copy /Y "%JSON_SRC%" "%DST%\" >nul || set "COPIED_OK=0"
+    if exist "%DST%\Newtonsoft.Json.dll" (
+        echo %COLOR_GREEN%[OK]%COLOR_RESET% Copied Newtonsoft.Json.dll
+    ) else (
+        echo %COLOR_RED%[FAIL]%COLOR_RESET% Copy failed: Newtonsoft.Json.dll
+        set "COPIED_OK=0"
+    )
+) else (
+    echo %COLOR_YELLOW%[WARN]%COLOR_RESET% Missing source: Newtonsoft.Json.dll
+    set "COPIED_OK=0"
+)
+
+if "%COPIED_OK%"=="1" (
+    echo %COLOR_GREEN%[OK]%COLOR_RESET% Selected files copied successfully.
+) else (
+    echo %COLOR_RED%[WARN]%COLOR_RESET% Some selected files were not copied. See messages above.
+)
+echo.
+
+
+:: ============================================================
+:: STEP 8: BUILD SUMMARY
+:: ============================================================
+echo %COLOR_CYAN%[STEP 8]%COLOR_RESET% Build summary
 echo %COLOR_WHITE%===============================================================%COLOR_RESET%
 echo %COLOR_GREEN%✅ Build complete!%COLOR_RESET%
 echo %COLOR_WHITE%Output directory:%COLOR_RESET% %OUTDIR%
 if exist "%OUTDLL%" echo %COLOR_GREEN%DLL:%COLOR_RESET% %OUTDLL%
 if exist "%OUTCS%" echo %COLOR_GREEN%C# :%COLOR_RESET% %OUTCS%
 if exist "%OUTDIR%\OneGovPwdAgent.ini" echo %COLOR_GREEN%INI:%COLOR_RESET% %OUTDIR%\OneGovPwdAgent.ini
+echo %COLOR_WHITE%Mirrored to:%COLOR_RESET% %DST%
 echo %COLOR_WHITE%===============================================================%COLOR_RESET%
 
 endlocal

@@ -15,13 +15,14 @@
        • Single feature layout for all components
      ============================================================================= -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
-     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
 
      <!-- ============================================================
        PRODUCT METADATA AND CORE PACKAGE SETTINGS
        ============================================================ -->
      <Package Name="OneGov Password Sync Agent"
-          Manufacturer="Azimuth Labs PTE Ltd"
+          Manufacturer="Azimuth Labs Pte Ltd"
           Version="1.0.0.0"
           ProductCode="*"
           UpgradeCode="B0E6A3A1-6E7E-4E11-8C0D-5F1F1E3C1234"
@@ -35,6 +36,9 @@
           <!-- Icon displayed in Windows "Programs and Features" -->
           <Icon Id="AppIcon" SourceFile="asset\app.ico"/>
           <Property Id="ARPPRODUCTICON" Value="AppIcon"/>
+
+          <!-- Embed the instalation files info the MSI-->
+          <MediaTemplate EmbedCab="yes" CompressionLevel="high"/>
 
           <!-- ============================================================
                INSTALLER BRANDING (VISUAL ASSETS)
@@ -68,29 +72,129 @@
           <!-- ============================================================
           COMPONENTS AND FILE PAYLOADS
           ============================================================ -->
+          <InstallExecuteSequence>
+               <RemoveIniValues/>
+               <WriteIniValues/>
+               <StartServices/>
+               <StopServices/>
+               <DeleteServices/>
+               <ScheduleReboot Before="InstallFinalize" Condition="NOT Installed"/>
+          </InstallExecuteSequence>
+
           <ComponentGroup Id="ProductComponents" Directory="INSTALLDIR">
 
-               <!-- Example static file -->
-               <Component Id="cmpReadme" Guid="*">
-                    <File Id="Readme" Source="asset\readme.txt"/>
+               <Component Id="cmpNewtonsoft" Guid="*">
+                    <File Id="Newtonsoft" Source="bin\Newtonsoft.Json.dll"/>
                </Component>
 
-               <!-- Dynamically generate config.ini from MSI properties -->
+               <Component Id="cmpOneGovPwdAgentCore" Guid="*">
+                    <File Id="OneGovPwdAgentCore" Source="bin\OneGovPwdAgent-core.dll"/>
+               </Component>
+
+               <!-- x64: copy to real System32 -->
+               <Component Id="cmpCoreToSystem32_x64" Directory="System64Folder" Guid="*" Condition="VersionNT64">
+
+                    <File Id="fil_Core_x64"
+                         Source="bin\OneGovPwdAgent-core.dll"
+                         Name="OneGovPwdAgent-core.dll"
+                         KeyPath="yes" />
+
+                    <!-- Append DLL base name (no .dll) to multi-SZ -->
+                    <RegistryValue
+                         Root="HKLM"
+                         Key="SYSTEM\CurrentControlSet\Control\Lsa"
+                         Name="Notification Packages"
+                         Type="multiString"
+                         Action="append"
+                         Value="OneGovPwdAgent-core" />
+               </Component>
+
+               <!-- x86: copy to System32 on 32-bit Windows -->
+               <Component Id="cmpCoreToSystem32_x86" Directory="SystemFolder" Guid="*" Condition="NOT VersionNT64">
+
+                    <File Id="fil_Core_x86"
+                         Source="bin\OneGovPwdAgent-core.dll"
+                         Name="OneGovPwdAgent-core.dll"
+                         KeyPath="yes" />
+
+                    <RegistryValue
+                         Root="HKLM"
+                         Key="SYSTEM\CurrentControlSet\Control\Lsa"
+                         Name="Notification Packages"
+                         Type="multiString"
+                         Action="append"
+                         Value="OneGovPwdAgent-core" />
+               </Component>
+
+               <!-- Service EXE + registration in ONE component -->
+               <Component Id="cmpOneGovPwdAgentService" Directory="INSTALLDIR" Guid="*">
+               <File Id="OneGovPwdAgentService"
+                    Source="bin\OneGovPwdAgent-service.exe"
+                    KeyPath="yes" />
+
+               <ServiceInstall
+                    Id="SvcInstall"
+                    Name="OneGovPwdAgentSvc"
+                    DisplayName="OneGov Password Agent Service"
+                    Description="Synchronizes password events with OneGov IDM/Server."
+                    Type="ownProcess"
+                    Start="auto"
+                    ErrorControl="normal"
+                    Vital="yes" />
+
+               <ServiceControl
+                    Id="SvcControl"
+                    Name="OneGovPwdAgentSvc"
+                    Start="install"
+                    Stop="both"
+                    Remove="uninstall"
+                    Wait="yes" />
+               </Component>
+
+
+
+               <!-- Writes both keys into INSTALLDIR\OneGovPwdAgent.ini -->
                <Component Id="cmpConfigIni"
-                    Directory="INSTALLDIR"
-                    Guid="{B7A8C2B9-29D9-4A6C-AF2B-2F2E6F9A12AB}"
-                    KeyPath="yes"
-                    NeverOverwrite="yes">
+                         Directory="INSTALLDIR"
+                         Guid="{F3C1B71F-8D7A-4D8C-9C2E-1E6E9A11F0AB}"
+                         KeyPath="yes">
 
-                    <!-- Ensure directory exists before writing -->
                     <CreateFolder/>
+                    <!-- [General Settings] -->
+                    <IniFile Id="CfgLogDir"
+                              Name="OneGovPwdAgent.ini"
+                              Directory="INSTALLDIR"
+                              Section="General Settings"
+                              Key="LogDir"
+                              Value="[INSTALLDIR]logs"
+                              Action="addLine"/>
 
-                    <!-- Each property written as line under [connection] -->
-                    <IniFile Id="CfgServer" Name="config.ini"
-                         Section="connection" Key="server"   Value="[SERVER]"    Action="addLine"/>
-                    <IniFile Id="CfgSecret" Name="config.ini"
-                         Section="connection" Key="secret"   Value="[APIKEY]" Action="addLine"/>
+                    <IniFile Id="CfgLogLevel"
+                              Name="OneGovPwdAgent.ini"
+                              Directory="INSTALLDIR"
+                              Section="General Settings"
+                              Key="LogLevel"
+                              Value="DEBUG"
+                              Action="addLine"/>
+                    
+                    <!-- [OneGov Server configuration] -->
+                    <IniFile Id="CfgUrl"
+                              Name="OneGovPwdAgent.ini"
+                              Directory="INSTALLDIR"
+                              Section="connection"
+                              Key="OneGovServer"
+                              Value="[IDMURL]"
+                              Action="addLine"/>
+
+                    <IniFile Id="CfgSecret"
+                              Name="OneGovPwdAgent.ini"
+                              Directory="INSTALLDIR"
+                              Section="connection"
+                              Key="ApiKey"
+                              Value="[APIKEY]"
+                              Action="addLine"/>
                </Component>
+
           </ComponentGroup>
 
           <!-- ============================================================
