@@ -7,17 +7,17 @@
        • Performs local field validation before proceeding
        • Shows a simple “missing input” error dialog
        • Pre-wired navigation with InstallDirDlg and VerifyReadyDlg
-       • Hook prepared for future REST validation via ValidateAgent.dll
+       • Hook prepared for future REST validation via AgentValidation.dll
      ============================================================================= -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
      <Fragment>
           <!-- Binary: custom action DLL (export must match DllEntry) -->
-          <Binary Id="RestCaDll" SourceFile="bin\ValidateAgent.dll"/>
+          <Binary Id="RestCaDll" SourceFile="bin\AgentValidation.dll"/>
 
-          <!-- Custom action: calls ValidateAgent in the DLL -->
-          <CustomAction Id="ValidateAgent"
+          <!-- Custom action: calls AgentValidation in the DLL -->
+          <CustomAction Id="AgentValidation"
                          BinaryRef="RestCaDll"
-                         DllEntry="ValidateAgent"
+                         DllEntry="AgentValidation"
                          Execute="immediate"
                          Return="check"/>
 
@@ -75,7 +75,7 @@
                          <Publish Event="SpawnDialog" Value="ConfigErrorDlgEmpty" Condition="NOT (IDMURL AND APIKEY)"/>
 
                          <!-- 2) Run custom action when fields are present -->
-                         <Publish Event="DoAction" Value="ValidateAgent" Condition="IDMURL AND APIKEY"/>
+                         <Publish Event="DoAction" Value="AgentValidation" Condition="IDMURL AND APIKEY"/>
 
                          <!-- 3) Branch based on validation result -->
                          <Publish Event="NewDialog"   Value="VerifyReadyDlg" Condition="IDMURL AND APIKEY AND REST_OK = 1"/>

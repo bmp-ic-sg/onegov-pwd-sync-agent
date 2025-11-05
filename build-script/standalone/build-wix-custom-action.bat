@@ -7,13 +7,13 @@ title Build WiX Custom Action DLL
 ::  ONEGOV PASSWORD AGENT - WIX CUSTOM ACTION DLL BUILDER
 ::
 ::  Purpose:
-::    Compiles ValidateAgent.dll used by the WiX installer for runtime validation.
+::    Compiles AgentValidation.dll used by the WiX installer for runtime validation.
 ::
 ::  Responsibilities:
 ::    • Clean previous /bin output folder
 ::    • Load MSVC and Windows SDK environments
 ::    • Detect the latest installed Windows SDK containing msi.h
-::    • Compile ValidateAgent.c into ValidateAgent.dll
+::    • Compile AgentValidation.c into AgentValidation.dll
 ::
 ::  Usage:
 ::    Run inside Developer Command Prompt or PowerShell (Administrator recommended)
@@ -50,11 +50,11 @@ if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 set "WORKSPACE=%SCRIPT_DIR%\.."
 for %%I in ("%WORKSPACE%") do set "WORKSPACE=%%~fI"
 
-set "SRC=%WORKSPACE%\wix-custom-action\ValidateAgent.c"
-set "DEF=%WORKSPACE%\wix-custom-action\ValidateAgent.def"
+set "CA_SRC=%WORKSPACE%\wix-custom-action\AgentValidation.c"
+set "CA_DEF=%WORKSPACE%\wix-custom-action\AgentValidation.def"
 set "OUTDIR=%WORKSPACE%\wix-setup-wizard\bin"
-set "CA_OUTDLL=%OUTDIR%\ValidateAgent.dll"
-set "CA_OUTPDB=%OUTDIR%\ValidateAgent.pdb"
+set "CA_OUTDLL=%OUTDIR%\AgentValidation.dll"
+set "CA_OUTPDB=%OUTDIR%\AgentValidation.pdb"
 
 echo %COLOR_GREEN%[OK]%COLOR_RESET% Paths initialized successfully
 echo.
@@ -197,26 +197,26 @@ echo.
 :: ============================================================
 echo %COLOR_CYAN%[STEP 5]%COLOR_RESET% Compile ValidateAgent.dll
 
-if not exist "%SRC%" (
-    echo %COLOR_RED%[ERROR]%COLOR_RESET% Source file missing: %SRC%
+if not exist "%CA_SRC%" (
+    echo %COLOR_RED%[ERROR]%COLOR_RESET% Source file missing: %CA_SRC%
     exit /b 5
 ) else (
-    echo %COLOR_GREEN%[OK]%COLOR_RESET% Found source → %SRC%
+    echo %COLOR_GREEN%[OK]%COLOR_RESET% Found source → %CA_SRC%
 )
 
-if not exist "%DEF%" (
-    echo %COLOR_RED%[ERROR]%COLOR_RESET% DEF file missing: %DEF%
+if not exist "%CA_DEF%" (
+    echo %COLOR_RED%[ERROR]%COLOR_RESET% CA_DEF file missing: %CA_DEF%
     exit /b 6
 ) else (
-    echo %COLOR_GREEN%[OK]%COLOR_RESET% Found DEF → %DEF%
+    echo %COLOR_GREEN%[OK]%COLOR_RESET% Found CA_DEF → %CA_DEF%
 )
 
 echo %COLOR_YELLOW%[BUILD]%COLOR_RESET% Compiling custom action DLL...
-cl /LD "%SRC%" ^
+cl /LD "%CA_SRC%" ^
    /Fe:"%CA_OUTDLL%" ^
    /Fd:"%CA_OUTPDB%" ^
    /W4 /WX- /nologo /Zi /MD ^
-   /link /DEF:"%DEF%" msi.lib winhttp.lib advapi32.lib
+   /link /CA_DEF:"%CA_DEF%" msi.lib winhttp.lib advapi32.lib
 
 if errorlevel 1 (
     echo %COLOR_RED%[FAIL]%COLOR_RESET% Custom Action build failed. Exit code %errorlevel%

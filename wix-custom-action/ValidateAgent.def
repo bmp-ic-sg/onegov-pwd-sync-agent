@@ -1,3 +1,0 @@
-LIBRARY ValidateAgent
-EXPORTS
-    ValidateAgent @1
